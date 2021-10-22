@@ -1,0 +1,17 @@
+{
+    "version": "0.0.1",
+    "name": "code-cord server",
+    "description": "Light weight stream server platform",
+    "meta": {
+        "license": "GNU General Public License v3.0 (GPLv3)",
+        "repo": "https://github.com/code-cord/cc.core.server",
+        "issues": "https://github.com/code-cord/cc.core.server/issues",
+        "authors": [
+            {
+                "name": "Artsem Hutarau",
+                "email": "gutorov.artem@yandex.ru",
+                "github": "https://github.com/MonkeyBuisness"
+            }
+        ]
+    }
+}
