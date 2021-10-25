@@ -17,6 +17,7 @@ type Options struct {
 	logLevel              logrus.Level
 	Meta                  map[string]interface{}
 	StreamContainerPrefix string
+	StreamImage           string
 	DataFolder            string
 	MaxAvatarSize         int64
 	BinFolder             string
@@ -106,5 +107,12 @@ func MaxAvatarSize(size int64) Option {
 func BinFolder(folder string) Option {
 	return func(o *Options) {
 		o.BinFolder = folder
+	}
+}
+
+// StreamImage sets stream docker image name.
+func StreamImage(img string) Option {
+	return func(o *Options) {
+		o.StreamImage = img
 	}
 }

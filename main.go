@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/code-cord/cc.core.server/server"
 	"github.com/sirupsen/logrus"
@@ -47,6 +49,7 @@ func main() {
 const (
 	defaultStreamPrefixContainer = "code-cord.stream"
 	codeCordBinPathEnv           = "CODE_CORD_PATH"
+	defaultStreamImage           = "code-cord.stream"
 )
 
 //go:embed server.json
@@ -58,6 +61,7 @@ type serverConfig struct {
 	tlsKeyFilePath        string
 	logLevel              string
 	streamContainerPrefix string
+	streamImage           string
 	dataFolder            string
 	maxAvatarSize         int64
 	binariesPath          string
@@ -156,6 +160,18 @@ func main() {
 					codeCordBinPathEnv,
 				},
 			},
+			&cli.StringFlag{
+				Name: "stream-image",
+				Aliases: []string{
+					"img",
+					"stream-img",
+				},
+				Usage:       "Stream image to run inside the container",
+				Required:    false,
+				DefaultText: defaultStreamImage,
+				Destination: &cfg.streamImage,
+				Value:       defaultStreamImage,
+			},
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
@@ -167,7 +183,15 @@ func main() {
 		logrus.Fatalf("could not create server instance: %v", err)
 	}
 
-	//s.NewStream()
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		logrus.Warn("server is shutting down...")
+		if err := s.Stop(context.Background()); err != nil {
+			logrus.Errorf("could not stop server: %v", err)
+		}
+	}()
 
 	s.Run(context.Background())
 }
@@ -189,6 +213,7 @@ func newServer(cfg serverConfig) (*server.Server, error) {
 		server.TLS(cfg.tlsCertFilePath, cfg.tlsKeyFilePath),
 		server.LogLevel(cfg.logLevel),
 		server.StreamContainerPrefix(cfg.streamContainerPrefix),
+		server.StreamImage(cfg.streamImage),
 		server.DataFolder(cfg.dataFolder),
 		server.MaxAvatarSize(cfg.maxAvatarSize),
 		server.BinFolder(cfg.binariesPath),

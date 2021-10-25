@@ -1,12 +1,16 @@
 package api
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Server describes server API.
 type Server interface {
 	Info() ServerInfo
 	Ping(ctx context.Context) error
 	NewStream(ctx context.Context, cfg StreamConfig) (*StreamOwnerInfo, error)
+	StreamInfo(ctx context.Context, streamUUID string) *StreamPublicInfo
 }
 
 // ServerInfo represents server info model.
@@ -51,6 +55,7 @@ type StreamOwnerInfo struct {
 	UUID        string
 	Name        string
 	Description string
+	StartedAt   time.Time
 	JoinPolicy  JoinPolicy
 	JoinCode    string
 	Port        int
@@ -65,4 +70,13 @@ type HostInfo struct {
 	Username string
 	AvatarID string
 	IP       string
+}
+
+// StreamPublicInfo represents stream public info model.
+type StreamPublicInfo struct {
+	UUID        string
+	Name        string
+	Description string
+	JoinPolicy  JoinPolicy
+	StartedAt   time.Time
 }

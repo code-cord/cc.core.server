@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/code-cord/cc.core.server/api"
 )
@@ -40,6 +41,7 @@ type StreamOwnerInfoResponse struct {
 	UUID        string               `json:"streamUUID"`
 	Name        string               `json:"name"`
 	Description string               `json:"description"`
+	StartedAt   time.Time            `json:"startedAt"`
 	JoinPolicy  api.JoinPolicy       `json:"joinPolicy"`
 	JoinCode    string               `json:"joinCode"`
 	Port        int                  `json:"port"`
@@ -56,12 +58,13 @@ type HostOwnerInfo struct {
 	IP       string `json:"ip"`
 }
 
-// StreamInfoResponse represents stream info response model.
-type StreamInfoResponse struct {
-	UUID        string `json:"uuid"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	JoinPolicy  string `json:"joinPolicy"`
+// StreamPublicInfoResponse represents stream public info response model.
+type StreamPublicInfoResponse struct {
+	UUID        string         `json:"streamUUID"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	JoinPolicy  api.JoinPolicy `json:"joinPolicy"`
+	StartedAt   time.Time      `json:"startedAt"`
 }
 
 // Rules returns custom validation rules for the request model.

@@ -45,6 +45,9 @@ func New(cfg Config) Router {
 	r.Path("/stream").
 		Methods(http.MethodPost).
 		HandlerFunc(r.createStream)
+	r.Path("/stream/{uuid}").
+		Methods(http.MethodGet).
+		HandlerFunc(r.getStreamInfo)
 
 	return r
 }

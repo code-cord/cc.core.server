@@ -11,6 +11,7 @@ import (
 	"net/rpc/jsonrpc"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,17 +19,12 @@ import (
 	"github.com/code-cord/cc.core.server/handler"
 	"github.com/code-cord/cc.core.server/stream"
 	"github.com/code-cord/cc.core.server/util"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
 const (
 	defaultServerHost                  = "127.0.0.1"
-	defaultStreamHost                  = "127.0.0.1"
 	defaultServerFolder                = ".__data"
 	defaultConnectToStreamRetryCount   = 3
 	defaultConnectToStreamRetryTimeout = 2 * time.Second
@@ -38,15 +34,20 @@ const (
 type Server struct {
 	opts       Options
 	httpServer *http.Server
-	log        *logrus.Logger
-	streams    sync.Map
+	streams    *sync.Map
 }
 
 type streamInfo struct {
 	api.Stream
-	cfg      api.StreamConfig
-	client   *rpc.Client
-	hostUUID string
+	name        string
+	description string
+	ip          string
+	port        int
+	join        api.StreamJoinPolicyConfig
+	rcpClient   *rpc.Client
+	startedAt   time.Time
+	hostInfo    api.HostInfo
+	launchMode  api.StreamLaunchMode
 }
 
 // New returns new Server instance.
@@ -66,10 +67,10 @@ func New(opt ...Option) Server {
 		httpServer: &http.Server{
 			Addr: opts.Address,
 		},
-		log: logrus.New(),
+		streams: new(sync.Map),
 	}
 	if opts.LogLevel != "" {
-		s.log.SetLevel(opts.logLevel)
+		logrus.SetLevel(opts.logLevel)
 	}
 	s.httpServer.Handler = handler.New(handler.Config{
 		Server: &s,
@@ -89,7 +90,7 @@ func (s *Server) Run(ctx context.Context) (err error) {
 		err = fmt.Errorf("could not serve http server: %v", err)
 	}()
 
-	s.log.Infof("server started at %s", s.httpServer.Addr)
+	logrus.Infof("server started at %s", s.httpServer.Addr)
 
 	if certFile, kFile := s.opts.TLSCertFile, s.opts.TLSKeyFile; certFile != "" && kFile != "" {
 		err = s.httpServer.ListenAndServeTLS(certFile, kFile)
@@ -103,8 +104,26 @@ func (s *Server) Run(ctx context.Context) (err error) {
 
 // Stop stops the running server.
 func (s *Server) Stop(ctx context.Context) error {
+	errs := make([]string, 0)
+	s.streams.Range(func(key, value interface{}) bool {
+		s := value.(streamInfo)
+		if err := s.rcpClient.Close(); err != nil {
+			errs = append(errs, fmt.Sprintf("could not close %s stream connection: %v", key, err))
+		}
+
+		if err := s.Stream.Stop(ctx); err != nil {
+			errs = append(errs, fmt.Sprintf("could not stop %s stream: %v", key, err))
+		}
+
+		return true
+	})
+
 	if err := s.httpServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("could not stop http server: %v", err)
+		errs = append(errs, fmt.Sprintf("could not stop http server: %v", err))
+	}
+
+	if len(errs) != 0 {
+		return errors.New(strings.Join(errs, ";"))
 	}
 
 	return nil
@@ -131,72 +150,87 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 	if cfg.Launch.Mode == "" {
 		cfg.Launch.Mode = api.StreamLaunchModeSingletonApp
 	}
-	if cfg.Launch.PreferredIP == "" {
-		cfg.Launch.PreferredIP = defaultStreamHost
-	}
-	if cfg.Launch.PreferredPort == 0 {
-		port, err := util.FreePort(cfg.Launch.PreferredIP)
-		if err != nil {
-			return nil, fmt.Errorf("could not find free port to run stream: %v", err)
-		}
-		cfg.Launch.PreferredPort = port
-	}
 
-	tcpAddress := fmt.Sprintf("%s:%d", cfg.Launch.PreferredIP, cfg.Launch.PreferredPort)
-
-	var (
-		stream api.Stream
-		err    error
-	)
+	var streamHandler api.Stream
 	streamUUID := uuid.New().String()
 	switch cfg.Launch.Mode {
 	case api.StreamLaunchModeSingletonApp:
-		stream, err = s.newStandaloneStream(ctx, tcpAddress)
+		streamHandler = stream.NewStandaloneStream(stream.StandaloneStreamConfig{
+			PreferedIP:   cfg.Launch.PreferredIP,
+			PreferedPort: cfg.Launch.PreferredPort,
+			BinPath:      s.opts.BinFolder,
+		})
 	case api.StreamLaunchModeDockerContainer:
-		// TODO: implement
+		streamHandler = stream.NewDockerContainerStream(stream.DockerContainerStreamConfig{
+			StreamUUID:      streamUUID,
+			ContainerPrefix: s.opts.StreamContainerPrefix,
+			DockerImage:     s.opts.StreamImage,
+			PreferedPort:    cfg.Launch.PreferredPort,
+			PreferedIP:      cfg.Launch.PreferredIP,
+		})
 	default:
 		return nil, fmt.Errorf("invalid launch mode: %v", cfg.Launch.Mode)
 	}
-	if err != nil {
-		return nil, err
-	}
 
-	if err := stream.Start(ctx); err != nil {
+	streamLaunchInfo, err := streamHandler.Start(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("could not run stream instance: %v", err)
 	}
 
 	var startStreamErr error
 	defer func() {
 		if startStreamErr != nil {
-			stream.Stop(ctx)
+			if err := streamHandler.Stop(ctx); err != nil {
+				logrus.Errorf("could not stop container: %v", err)
+			}
 		}
 	}()
 
-	client, err := connectToStream(tcpAddress, defaultConnectToStreamRetryCount)
+	tcpAddress := fmt.Sprintf("%s:%d", streamLaunchInfo.IP, streamLaunchInfo.Port)
+	rcpClient, err := connectToStream(tcpAddress, defaultConnectToStreamRetryCount)
 	if err != nil {
 		startStreamErr = fmt.Errorf("could not connect to the running stream: %v", err)
 		return nil, startStreamErr
 	}
 
-	hostUUID := uuid.New().String()
-	s.streams.Store(streamUUID, streamInfo{
-		Stream:   stream,
-		cfg:      cfg,
-		client:   client,
-		hostUUID: hostUUID,
-	})
+	newStreamInfo := streamInfo{
+		Stream:      streamHandler,
+		startedAt:   time.Now().UTC(),
+		name:        cfg.Name,
+		description: cfg.Description,
+		ip:          streamLaunchInfo.IP,
+		port:        streamLaunchInfo.Port,
+		join:        cfg.Join,
+		rcpClient:   rcpClient,
+		hostInfo: api.HostInfo{
+			UUID:     uuid.New().String(),
+			Username: cfg.Host.Username,
+			AvatarID: cfg.Host.AvatarID,
+			IP:       cfg.Host.IP,
+		},
+		launchMode: cfg.Launch.Mode,
+	}
+	s.streams.Store(streamUUID, newStreamInfo)
 
-	return buildStreamOwnerInfo(&cfg, streamUUID, hostUUID), nil
+	return buildStreamOwnerInfo(&newStreamInfo, streamUUID), nil
 }
 
-func (s *Server) newStandaloneStream(ctx context.Context, tcpAddress string) (
-	api.Stream, error) {
-	standaloneStream := stream.NewStandaloneStream(stream.StandaloneStreamConfig{
-		TCPAddress: tcpAddress,
-		BinPath:    s.opts.BinFolder,
-	})
+// StreamInfo returns public stream info by stream UUID.
+func (s *Server) StreamInfo(ctx context.Context, streamUUID string) *api.StreamPublicInfo {
+	stream, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return nil
+	}
 
-	return &standaloneStream, nil
+	info := stream.(streamInfo)
+
+	return &api.StreamPublicInfo{
+		UUID:        streamUUID,
+		Name:        info.name,
+		Description: info.description,
+		JoinPolicy:  info.join.JoinPolicy,
+		StartedAt:   info.startedAt,
+	}
 }
 
 func connectToStream(address string, tryCount int) (*rpc.Client, error) {
@@ -214,79 +248,25 @@ func connectToStream(address string, tryCount int) (*rpc.Client, error) {
 	return nil, errors.New("connection timeout")
 }
 
-func buildStreamOwnerInfo(
-	cfg *api.StreamConfig, streamUUID, hostUUID string) *api.StreamOwnerInfo {
+func buildStreamOwnerInfo(info *streamInfo, streamUUID string) *api.StreamOwnerInfo {
 	return &api.StreamOwnerInfo{
 		UUID:        streamUUID,
-		Name:        cfg.Name,
-		Description: cfg.Description,
-		JoinPolicy:  cfg.Join.JoinPolicy,
-		JoinCode:    cfg.Join.JoinCode,
-		Port:        cfg.Launch.PreferredPort,
-		IP:          cfg.Launch.PreferredIP,
-		LaunchMode:  cfg.Launch.Mode,
-		Host: api.HostInfo{
-			UUID:     hostUUID,
-			Username: cfg.Host.Username,
-			AvatarID: cfg.Host.AvatarID,
-			IP:       cfg.Host.IP,
-		},
+		Name:        info.name,
+		Description: info.description,
+		JoinPolicy:  info.join.JoinPolicy,
+		JoinCode:    info.join.JoinCode,
+		Port:        info.port,
+		IP:          info.ip,
+		LaunchMode:  info.launchMode,
+		Host:        info.hostInfo,
+		StartedAt:   info.startedAt,
 	}
 }
 
 ///////////////
-func (s *Server) NewStream2() {
-	cli, err := client.NewClientWithOpts()
-	if err != nil {
-		panic(err)
-	}
-
-	ctx := context.Background()
-	resp, err := cli.ContainerCreate(ctx, &container.Config{
-		Image:        "code-cord.stream",
-		ExposedPorts: nat.PortSet{"30309": struct{}{}},
-	}, &container.HostConfig{
-
-		PortBindings: map[nat.Port][]nat.PortBinding{
-			nat.Port("30309"): {
-				{
-					HostPort: "30309",
-				},
-			},
-		},
-	}, nil, nil, "ssasaasdasdsss")
-	if err != nil {
-		panic(err)
-	}
-
-	if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
-		panic(err)
-	}
-
-	//time.Sleep(10 * time.Second)
-
-	client, err := jsonrpc.Dial("tcp", "0.0.0.0:30309")
-	if err != nil {
-		log.Fatal(err)
-	}
-	in := bufio.NewReader(os.Stdin)
-	for {
-		line, _, err := in.ReadLine()
-		if err != nil {
-			log.Fatal(err)
-		}
-		var reply Reply
-		err = client.Call("Listener.GetLine", line, &reply)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("Reply: %v, Data: %v", reply, reply.Data)
-	}
-
-}
 
 func (s *Server) PPP() {
-	client, err := jsonrpc.Dial("tcp", "0.0.0.0:30303")
+	client, err := jsonrpc.Dial("tcp", "0.0.0.0:30300")
 	if err != nil {
 		log.Fatal(err)
 	}

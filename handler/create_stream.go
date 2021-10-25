@@ -52,6 +52,7 @@ func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerI
 		Description: info.Description,
 		JoinPolicy:  info.JoinPolicy,
 		JoinCode:    info.JoinCode,
+		StartedAt:   info.StartedAt,
 		Port:        info.Port,
 		IP:          info.IP,
 		LaunchMode:  info.LaunchMode,

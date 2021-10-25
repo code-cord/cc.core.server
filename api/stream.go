@@ -17,9 +17,14 @@ const (
 
 // Stream represents stream API.
 type Stream interface {
-	Start(ctx context.Context) error
-	//Info(ctx context.Context)
+	Start(ctx context.Context) (*StartStreamInfo, error)
 	Stop(ctx context.Context) error
+}
+
+// StartStreamInfo represents start stream info model.
+type StartStreamInfo struct {
+	IP   string
+	Port int
 }
 
 // JoinPolicy represents join to stream policy.
