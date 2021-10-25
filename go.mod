@@ -5,13 +5,18 @@ go 1.17
 require (
 	github.com/docker/docker v20.10.9+incompatible
 	github.com/docker/go-connections v0.4.0
+	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.8.0
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/sirupsen/logrus v1.8.1
+	github.com/urfave/cli/v2 v2.3.0
+	gopkg.in/thedevsaddam/govalidator.v1 v1.9.10
 )
 
 require (
 	github.com/Microsoft/go-winio v0.5.1 // indirect
 	github.com/containerd/containerd v1.5.7 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -21,6 +26,8 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/russross/blackfriday/v2 v2.0.1 // indirect
+	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
 	golang.org/x/net v0.0.0-20211020060615-d418f374d309 // indirect
 	golang.org/x/sys v0.0.0-20210616094352-59db8d763f22 // indirect
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect

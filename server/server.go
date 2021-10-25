@@ -3,24 +3,35 @@ package server
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
+	"path"
+	"sync"
+	"time"
 
 	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler"
+	"github.com/code-cord/cc.core.server/stream"
 	"github.com/code-cord/cc.core.server/util"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	defaultServerHost = "127.0.0.1"
+	defaultServerHost                  = "127.0.0.1"
+	defaultStreamHost                  = "127.0.0.1"
+	defaultServerFolder                = ".__data"
+	defaultConnectToStreamRetryCount   = 3
+	defaultConnectToStreamRetryTimeout = 2 * time.Second
 )
 
 // Server represents code-cord server implementation model.
@@ -28,11 +39,27 @@ type Server struct {
 	opts       Options
 	httpServer *http.Server
 	log        *logrus.Logger
+	streams    sync.Map
+}
+
+type streamInfo struct {
+	api.Stream
+	cfg      api.StreamConfig
+	client   *rpc.Client
+	hostUUID string
 }
 
 // New returns new Server instance.
 func New(opt ...Option) Server {
 	opts := newServerOptions(opt...)
+
+	avatarService, err := NewAvatarService(AvatarServiceConfig{
+		DataFolder:  opts.DataFolder,
+		MaxFileSize: opts.MaxAvatarSize,
+	})
+	if err != nil {
+		logrus.Fatalf("could not init avatar service: %v", err)
+	}
 
 	s := Server{
 		opts: opts,
@@ -46,6 +73,7 @@ func New(opt ...Option) Server {
 	}
 	s.httpServer.Handler = handler.New(handler.Config{
 		Server: &s,
+		Avatar: avatarService,
 	})
 
 	return s
@@ -97,8 +125,117 @@ func (s *Server) Ping(ctx context.Context) error {
 	return nil
 }
 
+// NewStream starts a new stream.
+func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
+	*api.StreamOwnerInfo, error) {
+	if cfg.Launch.Mode == "" {
+		cfg.Launch.Mode = api.StreamLaunchModeSingletonApp
+	}
+	if cfg.Launch.PreferredIP == "" {
+		cfg.Launch.PreferredIP = defaultStreamHost
+	}
+	if cfg.Launch.PreferredPort == 0 {
+		port, err := util.FreePort(cfg.Launch.PreferredIP)
+		if err != nil {
+			return nil, fmt.Errorf("could not find free port to run stream: %v", err)
+		}
+		cfg.Launch.PreferredPort = port
+	}
+
+	tcpAddress := fmt.Sprintf("%s:%d", cfg.Launch.PreferredIP, cfg.Launch.PreferredPort)
+
+	var (
+		stream api.Stream
+		err    error
+	)
+	streamUUID := uuid.New().String()
+	switch cfg.Launch.Mode {
+	case api.StreamLaunchModeSingletonApp:
+		stream, err = s.newStandaloneStream(ctx, tcpAddress)
+	case api.StreamLaunchModeDockerContainer:
+		// TODO: implement
+	default:
+		return nil, fmt.Errorf("invalid launch mode: %v", cfg.Launch.Mode)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if err := stream.Start(ctx); err != nil {
+		return nil, fmt.Errorf("could not run stream instance: %v", err)
+	}
+
+	var startStreamErr error
+	defer func() {
+		if startStreamErr != nil {
+			stream.Stop(ctx)
+		}
+	}()
+
+	client, err := connectToStream(tcpAddress, defaultConnectToStreamRetryCount)
+	if err != nil {
+		startStreamErr = fmt.Errorf("could not connect to the running stream: %v", err)
+		return nil, startStreamErr
+	}
+
+	hostUUID := uuid.New().String()
+	s.streams.Store(streamUUID, streamInfo{
+		Stream:   stream,
+		cfg:      cfg,
+		client:   client,
+		hostUUID: hostUUID,
+	})
+
+	return buildStreamOwnerInfo(&cfg, streamUUID, hostUUID), nil
+}
+
+func (s *Server) newStandaloneStream(ctx context.Context, tcpAddress string) (
+	api.Stream, error) {
+	standaloneStream := stream.NewStandaloneStream(stream.StandaloneStreamConfig{
+		TCPAddress: tcpAddress,
+		BinPath:    s.opts.BinFolder,
+	})
+
+	return &standaloneStream, nil
+}
+
+func connectToStream(address string, tryCount int) (*rpc.Client, error) {
+	for i := 0; i < tryCount; i++ {
+		client, err := jsonrpc.Dial("tcp", address)
+		if err == nil {
+			return client, nil
+		}
+
+		logrus.Warnf("could not connect to the stream: %s %v", address, err)
+
+		time.Sleep(defaultConnectToStreamRetryTimeout)
+	}
+
+	return nil, errors.New("connection timeout")
+}
+
+func buildStreamOwnerInfo(
+	cfg *api.StreamConfig, streamUUID, hostUUID string) *api.StreamOwnerInfo {
+	return &api.StreamOwnerInfo{
+		UUID:        streamUUID,
+		Name:        cfg.Name,
+		Description: cfg.Description,
+		JoinPolicy:  cfg.Join.JoinPolicy,
+		JoinCode:    cfg.Join.JoinCode,
+		Port:        cfg.Launch.PreferredPort,
+		IP:          cfg.Launch.PreferredIP,
+		LaunchMode:  cfg.Launch.Mode,
+		Host: api.HostInfo{
+			UUID:     hostUUID,
+			Username: cfg.Host.Username,
+			AvatarID: cfg.Host.AvatarID,
+			IP:       cfg.Host.IP,
+		},
+	}
+}
+
 ///////////////
-func (s *Server) NewStream() {
+func (s *Server) NewStream2() {
 	cli, err := client.NewClientWithOpts()
 	if err != nil {
 		panic(err)
@@ -193,6 +330,17 @@ func newServerOptions(opt ...Option) Options {
 			lvl = logrus.InfoLevel
 		}
 		opts.logLevel = lvl
+	}
+
+	if opts.DataFolder == "" {
+		dir, err := os.Getwd()
+		if err != nil {
+			logrus.Fatalf("could not detect working directory path: %v", err)
+		}
+		opts.DataFolder = path.Join(dir, defaultServerFolder)
+		if err := os.MkdirAll(opts.DataFolder, 0700); err != nil && !os.IsExist(err) {
+			logrus.Panicf("could not create server folders: %v", err)
+		}
 	}
 
 	return opts

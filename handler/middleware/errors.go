@@ -20,8 +20,13 @@ const (
 	errAcceptParticipantJoin = 2003
 	errRejectParticipantJoin = 2004*/
 
-	// server errors 1xxx.
-	errServerPing = 1000
+	// request errors 1xxx.
+	errCodeInvalidRequest      = 1000
+	errCodeInvalidRequestParam = 1001
+
+	// server errors 2xxx.
+	errCodeServerPing   = 2000
+	errCodeCreateStream = 2001
 )
 
 // Custom error (aka unexpected error).
@@ -32,11 +37,27 @@ var (
 	}
 )
 
+// Request error.
+var (
+	ErrInvalidRequest = Error{
+		Code:    errCodeInvalidRequest,
+		Message: "invalid request",
+	}
+	ErrInvalidRequestParam = Error{
+		Code:    errCodeInvalidRequestParam,
+		Message: "invalid param",
+	}
+)
+
 // Server error.
 var (
 	ErrServerPing = Error{
-		Code:    errServerPing,
+		Code:    errCodeServerPing,
 		Message: "could not ping server",
+	}
+	ErrCreateStream = Error{
+		Code:    errCodeCreateStream,
+		Message: "could not create stream",
 	}
 )
 
@@ -45,6 +66,12 @@ type Error struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
 	Details interface{} `json:"details,omitempty"`
+}
+
+// RequestParamErrDetails describes request param error details.
+type RequestParamErrDetails struct {
+	Param  string   `json:"param"`
+	Errors []string `json:"errors"`
 }
 
 // New creates a new copy of Error.

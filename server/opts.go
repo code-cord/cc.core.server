@@ -7,15 +7,19 @@ type Option func(*Options)
 
 // Options represents server options model.
 type Options struct {
-	Name        string
-	Description string
-	Version     string
-	Address     string
-	TLSCertFile string
-	TLSKeyFile  string
-	LogLevel    string
-	logLevel    logrus.Level
-	Meta        map[string]interface{}
+	Name                  string
+	Description           string
+	Version               string
+	Address               string
+	TLSCertFile           string
+	TLSKeyFile            string
+	LogLevel              string
+	logLevel              logrus.Level
+	Meta                  map[string]interface{}
+	StreamContainerPrefix string
+	DataFolder            string
+	MaxAvatarSize         int64
+	BinFolder             string
 }
 
 // Name sets server name option.
@@ -74,5 +78,33 @@ func LogLevel(level string) Option {
 func Meta(meta map[string]interface{}) Option {
 	return func(o *Options) {
 		o.Meta = meta
+	}
+}
+
+// StreamContainerPrefix sets stream container prefix for streams running inside docker containers.
+func StreamContainerPrefix(prefix string) Option {
+	return func(o *Options) {
+		o.StreamContainerPrefix = prefix
+	}
+}
+
+// DataFolder sets folder to store server data.
+func DataFolder(folder string) Option {
+	return func(o *Options) {
+		o.DataFolder = folder
+	}
+}
+
+// MaxAvatarSize sets maximum avatar size in bytes.
+func MaxAvatarSize(size int64) Option {
+	return func(o *Options) {
+		o.MaxAvatarSize = size
+	}
+}
+
+// BinFolder sets path to the code-cord binaries.
+func BinFolder(folder string) Option {
+	return func(o *Options) {
+		o.BinFolder = folder
 	}
 }

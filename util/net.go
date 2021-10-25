@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"net"
+	"net/http"
 )
 
 // FreePort returns free system open port that is ready to use.
@@ -18,4 +19,13 @@ func FreePort(host string) (int, error) {
 	}
 
 	return tcpListener.Addr().(*net.TCPAddr).Port, tcpListener.Close()
+}
+
+// GetIP returns IP address of the request.
+func GetIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-FORWARDED-FOR"); forwarded != "" {
+		return forwarded
+	}
+
+	return r.RemoteAddr
 }

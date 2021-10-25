@@ -12,3 +12,8 @@ type ServerInfoResponse struct {
 type PongResponse struct {
 	Message string `json:"message"`
 }
+
+// AddAvatarResponse represents add avatar response model.
+type AddAvatarResponse struct {
+	AvatarID string `json:"avatarId"`
+}
