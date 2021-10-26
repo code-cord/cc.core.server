@@ -69,3 +69,12 @@ func ParseJSONRequest(r *http.Request, out interface{}) error {
 
 	return ErrInvalidRequestParam.New(paramErrs)
 }
+
+// UpgradeRequestToSSE upgrades existing HTTP request to SSE.
+func UpgradeRequestToSSE(w http.ResponseWriter, origin string) {
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+}

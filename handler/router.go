@@ -48,6 +48,15 @@ func New(cfg Config) Router {
 	r.Path("/stream/{uuid}").
 		Methods(http.MethodGet).
 		HandlerFunc(r.getStreamInfo)
+	r.Path("/stream/{uuid}/join").
+		Methods(http.MethodPost).
+		HandlerFunc(r.joinStream)
+	r.Path("/stream/{uuid}/participants").
+		Methods(http.MethodGet).
+		HandlerFunc(r.getStreamParticipants)
+	r.Path("/stream/{uuid}/participants/{participantUUID}/decision").
+		Methods(http.MethodGet).
+		HandlerFunc(r.joinParticipantDecision)
 
 	return r
 }

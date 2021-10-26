@@ -67,6 +67,27 @@ type StreamPublicInfoResponse struct {
 	StartedAt   time.Time      `json:"startedAt"`
 }
 
+// ParticipantJoinRequest represents participant join request model.
+type ParticipantJoinRequest struct {
+	Name     string `json:"name"`
+	AvatarID string `json:"avatarId"`
+	JoinCode string `json:"joinCode,omitempty"`
+}
+
+// ParticipantJoinResponse represents participant join response model.
+type ParticipantJoinResponse struct {
+	Allowed     bool   `json:"allowed"`
+	AccessToken string `json:"accessToken,omitempty"`
+}
+
+// ParticipantResponse represents participant response model.
+type ParticipantResponse struct {
+	UUID     string                `json:"uuid"`
+	Name     string                `json:"name"`
+	AvatarID string                `json:"avatarId"`
+	Status   api.ParticipantStatus `json:"status"`
+}
+
 // Rules returns custom validation rules for the request model.
 func (req *CreateStreamRequest) Rules() map[string][]string {
 	rules := map[string][]string{
@@ -120,4 +141,14 @@ func (req *CreateStreamRequest) Rules() map[string][]string {
 	}
 
 	return rules
+}
+
+// Rules returns custom validation rules for the request model.
+func (req *ParticipantJoinRequest) Rules() map[string][]string {
+	return map[string][]string{
+		"name": {
+			"required",
+			"max:32",
+		},
+	}
 }

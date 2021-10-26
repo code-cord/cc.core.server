@@ -5,12 +5,24 @@ import (
 	"time"
 )
 
+// Participant status.
+const (
+	ParticipantStatusActive  ParticipantStatus = "active"
+	ParticipantStatusBlocked ParticipantStatus = "blocked"
+	ParticipantStatusPending ParticipantStatus = "pending"
+)
+
 // Server describes server API.
 type Server interface {
 	Info() ServerInfo
 	Ping(ctx context.Context) error
 	NewStream(ctx context.Context, cfg StreamConfig) (*StreamOwnerInfo, error)
 	StreamInfo(ctx context.Context, streamUUID string) *StreamPublicInfo
+	JoinParticipant(ctx context.Context, streamUUID, joinCode string, p Participant) (
+		*JoinParticipantDecision, error)
+	DecideParticipantJoin(
+		ctx context.Context, streamUUID, participantUUID string, joinAllowed bool) error
+	StreamParticipants(ctx context.Context, streamUUID string) ([]Participant, error)
 }
 
 // ServerInfo represents server info model.
@@ -79,4 +91,22 @@ type StreamPublicInfo struct {
 	Description string
 	JoinPolicy  JoinPolicy
 	StartedAt   time.Time
+}
+
+// Participant represents participant model.
+type Participant struct {
+	UUID     string
+	Name     string
+	AvatarID string
+	IP       string
+	Status   ParticipantStatus
+}
+
+// ParticipantStatus represents participant status type.
+type ParticipantStatus string
+
+// JoinParticipantDecision represents join participant decision model.
+type JoinParticipantDecision struct {
+	JoinAllowed bool
+	AccessToken string
 }

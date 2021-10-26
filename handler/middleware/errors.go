@@ -23,10 +23,16 @@ const (
 	// request errors 1xxx.
 	errCodeInvalidRequest      = 1000
 	errCodeInvalidRequestParam = 1001
+	errCodeSSEUpgrade          = 1002
 
 	// server errors 2xxx.
 	errCodeServerPing   = 2000
 	errCodeCreateStream = 2001
+
+	// stream errors 3xxx.
+	errCodeJoinStream              = 3000
+	errCodeFetchStreamParticipants = 3001
+	errCodeDecideParticipantJoin   = 3002
 )
 
 // Custom error (aka unexpected error).
@@ -47,6 +53,10 @@ var (
 		Code:    errCodeInvalidRequestParam,
 		Message: "invalid param",
 	}
+	ErrSSEUpgrade = Error{
+		Code:    errCodeSSEUpgrade,
+		Message: "could not upgrade SSE connection",
+	}
 )
 
 // Server error.
@@ -58,6 +68,22 @@ var (
 	ErrCreateStream = Error{
 		Code:    errCodeCreateStream,
 		Message: "could not create stream",
+	}
+)
+
+// Stream error.
+var (
+	ErrJoinStream = Error{
+		Code:    errCodeJoinStream,
+		Message: "could not join the stream",
+	}
+	ErrFetchStreamParticipants = Error{
+		Code:    errCodeFetchStreamParticipants,
+		Message: "could not fetch list of stream participants",
+	}
+	ErrDecideParticipantJoin = Error{
+		Code:    errCodeDecideParticipantJoin,
+		Message: "could not change participant join status",
 	}
 )
 

@@ -3,6 +3,9 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
@@ -19,6 +22,7 @@ import (
 	"github.com/code-cord/cc.core.server/handler"
 	"github.com/code-cord/cc.core.server/stream"
 	"github.com/code-cord/cc.core.server/util"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
@@ -39,15 +43,23 @@ type Server struct {
 
 type streamInfo struct {
 	api.Stream
-	name        string
-	description string
-	ip          string
-	port        int
-	join        api.StreamJoinPolicyConfig
-	rcpClient   *rpc.Client
-	startedAt   time.Time
-	hostInfo    api.HostInfo
-	launchMode  api.StreamLaunchMode
+	name                   string
+	description            string
+	ip                     string
+	port                   int
+	join                   api.StreamJoinPolicyConfig
+	rcpClient              *rpc.Client
+	startedAt              time.Time
+	hostInfo               api.HostInfo
+	launchMode             api.StreamLaunchMode
+	participants           *sync.Map
+	pendingParticipantsMap *sync.Map
+	rsaKeys                *rsaKeys
+}
+
+type rsaKeys struct {
+	privateKeyBytes []byte
+	publicKeyBytes  []byte
 }
 
 // New returns new Server instance.
@@ -147,6 +159,12 @@ func (s *Server) Ping(ctx context.Context) error {
 // NewStream starts a new stream.
 func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 	*api.StreamOwnerInfo, error) {
+	// generate stream access keys.
+	keys, err := generateRSAKeys()
+	if err != nil {
+		return nil, fmt.Errorf("could not generate stream access keys: %v", err)
+	}
+
 	if cfg.Launch.Mode == "" {
 		cfg.Launch.Mode = api.StreamLaunchModeSingletonApp
 	}
@@ -211,7 +229,10 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 			AvatarID: cfg.Host.AvatarID,
 			IP:       cfg.Host.IP,
 		},
-		launchMode: cfg.Launch.Mode,
+		launchMode:             cfg.Launch.Mode,
+		participants:           new(sync.Map),
+		pendingParticipantsMap: new(sync.Map),
+		rsaKeys:                keys,
 	}
 	s.streams.Store(streamUUID, newStreamInfo)
 
@@ -234,6 +255,99 @@ func (s *Server) StreamInfo(ctx context.Context, streamUUID string) *api.StreamP
 		JoinPolicy:  info.join.JoinPolicy,
 		StartedAt:   info.startedAt,
 	}
+}
+
+// JoinParticipant joins a new particiant to the stream.
+func (s *Server) JoinParticipant(
+	joinCodectx context.Context, streamUUID, joinCode string, p api.Participant) (
+	joinDesicion *api.JoinParticipantDecision, joinErr error) {
+	streamValue, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
+	}
+
+	streamData := streamValue.(streamInfo)
+	p.UUID = uuid.New().String()
+	p.Status = api.ParticipantStatusPending
+	streamData.participants.Store(p.UUID, p)
+
+	joinDesicion = new(api.JoinParticipantDecision)
+	defer func() {
+		if !joinDesicion.JoinAllowed {
+			streamData.participants.Delete(p.UUID)
+			return
+		}
+
+		accessToken, err := generateParticipantAccessToken(
+			streamUUID, p.UUID, streamData.rsaKeys.privateKeyBytes)
+		if err != nil {
+			joinErr = fmt.Errorf("could not generate access token: %v", err)
+			return
+		}
+
+		joinDesicion.AccessToken = accessToken
+		p.Status = api.ParticipantStatusActive
+		streamData.participants.Store(p.UUID, p)
+	}()
+
+	switch streamData.join.JoinPolicy {
+	case api.JoinPolicyAuto:
+		joinDesicion.JoinAllowed = true
+	case api.JoinPolicyByCode:
+		if !strings.EqualFold(streamData.join.JoinCode, joinCode) {
+			joinErr = errors.New("invalid join code")
+			return
+		}
+		joinDesicion.JoinAllowed = true
+	case api.JoinPolicyHostResolve:
+		pendingChan := make(chan bool)
+		streamData.pendingParticipantsMap.Store(p.UUID, pendingChan)
+		joinDesicion.JoinAllowed = <-pendingChan
+	default:
+		joinErr = errors.New("unknown stream join policy")
+	}
+
+	return
+}
+
+// DecideParticipantJoin allows or denies participant to join the stream.
+func (s *Server) DecideParticipantJoin(
+	ctx context.Context, streamUUID, participantUUID string, joinAllowed bool) error {
+	streamValue, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return fmt.Errorf("could not find stream with UUID %s", streamUUID)
+	}
+	streamData := streamValue.(streamInfo)
+
+	participantValue, ok := streamData.pendingParticipantsMap.Load(participantUUID)
+	if !ok {
+		return fmt.Errorf("could not find pending participant with UUID %s", participantUUID)
+	}
+	participantChan := participantValue.(chan bool)
+	participantChan <- joinAllowed
+
+	return nil
+}
+
+// StreamParticipants returns list of stream participants.
+func (s *Server) StreamParticipants(ctx context.Context, streamUUID string) (
+	[]api.Participant, error) {
+	streamValue, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
+	}
+	streamData := streamValue.(streamInfo)
+
+	participants := make([]api.Participant, 0)
+	streamData.participants.Range(func(key, value interface{}) bool {
+		if participant, ok := value.(api.Participant); ok {
+			participants = append(participants, participant)
+		}
+
+		return true
+	})
+
+	return participants, nil
 }
 
 func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan error) {
@@ -274,34 +388,6 @@ func buildStreamOwnerInfo(info *streamInfo, streamUUID string) *api.StreamOwnerI
 		StartedAt:   info.startedAt,
 	}
 }
-
-///////////////
-
-func (s *Server) PPP() {
-	client, err := jsonrpc.Dial("tcp", "0.0.0.0:30300")
-	if err != nil {
-		log.Fatal(err)
-	}
-	in := bufio.NewReader(os.Stdin)
-	for {
-		line, _, err := in.ReadLine()
-		if err != nil {
-			log.Fatal(err)
-		}
-		var reply Reply
-		err = client.Call("Listener.GetLine", line, &reply)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("Reply: %v, Data: %v", reply, reply.Data)
-	}
-}
-
-type Reply struct {
-	Data string
-}
-
-////////////////
 
 func newServerOptions(opt ...Option) Options {
 	var opts Options
@@ -346,3 +432,62 @@ func defaultServerAddress() string {
 
 	return fmt.Sprintf("%s:%d", defaultServerHost, freePort)
 }
+
+func generateRSAKeys() (*rsaKeys, error) {
+	privatekey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate private RSA key: %v", err)
+	}
+	publickey := &privatekey.PublicKey
+
+	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privatekey)
+
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publickey)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate public RSA key: %v", err)
+	}
+
+	return &rsaKeys{
+		privateKeyBytes: privateKeyBytes,
+		publicKeyBytes:  publicKeyBytes,
+	}, nil
+}
+
+func generateParticipantAccessToken(
+	streamUUID, participantUUID string, privateKey []byte) (string, error) {
+	claims := &jwt.MapClaims{
+		"streamUUID": streamUUID,
+		"UUID":       participantUUID,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(privateKey)
+}
+
+///////////////
+
+func (s *Server) PPP() {
+	client, err := jsonrpc.Dial("tcp", "0.0.0.0:30300")
+	if err != nil {
+		log.Fatal(err)
+	}
+	in := bufio.NewReader(os.Stdin)
+	for {
+		line, _, err := in.ReadLine()
+		if err != nil {
+			log.Fatal(err)
+		}
+		var reply Reply
+		err = client.Call("Listener.GetLine", line, &reply)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Reply: %v, Data: %v", reply, reply.Data)
+	}
+}
+
+type Reply struct {
+	Data string
+}
+
+////////////////
