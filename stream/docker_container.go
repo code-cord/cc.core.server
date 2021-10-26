@@ -28,6 +28,7 @@ type DockerContainerStream struct {
 	containerID     string
 	preferedPort    int
 	preferedIP      string
+	interruptChan   chan error
 }
 
 // DockerContainerStreamConfig represents docker container stream configuration model.
@@ -47,6 +48,7 @@ func NewDockerContainerStream(cfg DockerContainerStreamConfig) *DockerContainerS
 		dockerImage:     cfg.DockerImage,
 		preferedPort:    cfg.PreferedPort,
 		preferedIP:      cfg.PreferedIP,
+		interruptChan:   make(chan error),
 	}
 }
 
@@ -107,6 +109,13 @@ func (s *DockerContainerStream) Start(ctx context.Context) (*api.StartStreamInfo
 
 	time.Sleep(time.Second)
 
+	go func() {
+		okBodyChan, _ := cli.ContainerWait(
+			context.Background(), s.containerID, container.WaitConditionNotRunning)
+		waitOk := <-okBodyChan
+		s.interruptChan <- fmt.Errorf("status code %d: %v", waitOk.StatusCode, waitOk.Error)
+	}()
+
 	return &api.StartStreamInfo{
 		IP:   s.preferedIP,
 		Port: s.preferedPort,
@@ -121,4 +130,9 @@ func (s *DockerContainerStream) Stop(ctx context.Context) error {
 	}
 
 	return cli.ContainerStop(ctx, s.containerID, nil)
+}
+
+// InterruptNotification returns an error when the stream has been interrupted.
+func (s *DockerContainerStream) InterruptNotification() <-chan error {
+	return s.interruptChan
 }

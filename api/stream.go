@@ -19,6 +19,7 @@ const (
 type Stream interface {
 	Start(ctx context.Context) (*StartStreamInfo, error)
 	Stop(ctx context.Context) error
+	InterruptNotification() <-chan error
 }
 
 // StartStreamInfo represents start stream info model.

@@ -52,8 +52,8 @@ const (
 	defaultStreamImage           = "code-cord.stream"
 )
 
-//go:embed server.json
-var serverInfo []byte
+//go:embed build.json
+var buildInfo []byte
 
 type serverConfig struct {
 	address               string
@@ -198,7 +198,7 @@ func main() {
 
 func newServer(cfg serverConfig) (*server.Server, error) {
 	var info map[string]interface{}
-	if err := json.Unmarshal(serverInfo, &info); err != nil {
+	if err := json.Unmarshal(buildInfo, &info); err != nil {
 		return nil, err
 	}
 

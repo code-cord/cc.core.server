@@ -19,10 +19,11 @@ const (
 
 // StandaloneStream represents stream as standalone running app implementation model.
 type StandaloneStream struct {
-	preferedIP   string
-	preferedPort int
-	binPath      string
-	binCmd       *exec.Cmd
+	preferedIP    string
+	preferedPort  int
+	binPath       string
+	binCmd        *exec.Cmd
+	interruptChan chan error
 }
 
 // StandaloneStreamConfig represents standalone stream configuration model.
@@ -35,9 +36,10 @@ type StandaloneStreamConfig struct {
 // NewStandaloneStream returns new standalone stream instance.
 func NewStandaloneStream(cfg StandaloneStreamConfig) *StandaloneStream {
 	return &StandaloneStream{
-		preferedIP:   cfg.PreferedIP,
-		preferedPort: cfg.PreferedPort,
-		binPath:      cfg.BinPath,
+		preferedIP:    cfg.PreferedIP,
+		preferedPort:  cfg.PreferedPort,
+		binPath:       cfg.BinPath,
+		interruptChan: make(chan error),
 	}
 }
 
@@ -63,28 +65,29 @@ func (s *StandaloneStream) Start(ctx context.Context) (*api.StartStreamInfo, err
 		return nil, err
 	}
 
-	errChan := make(chan error)
 	go func() {
 		err := s.binCmd.Wait()
 		if err != nil {
-			errChan <- fmt.Errorf("could not stream binary: %v", err)
+			s.interruptChan <- err
 		}
 	}()
 
-	go func() {
-		time.Sleep(2 * time.Second)
-		close(errChan)
-	}()
+	time.Sleep(time.Second)
 
 	return &api.StartStreamInfo{
 		IP:   s.preferedIP,
 		Port: s.preferedPort,
-	}, <-errChan
+	}, nil
 }
 
 // Stop stops running stream.
 func (s *StandaloneStream) Stop(ctx context.Context) error {
 	return s.binCmd.Process.Kill()
+}
+
+// InterruptNotification returns an error when the stream has been interrupted.
+func (s *StandaloneStream) InterruptNotification() <-chan error {
+	return s.interruptChan
 }
 
 func resolveBinPath(binFolder, binName string) string {

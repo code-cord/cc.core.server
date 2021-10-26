@@ -193,6 +193,9 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 		return nil, startStreamErr
 	}
 
+	// listening stream interrupt event.
+	go s.listenStreamInterruptEvent(streamUUID, streamHandler.InterruptNotification())
+
 	newStreamInfo := streamInfo{
 		Stream:      streamHandler,
 		startedAt:   time.Now().UTC(),
@@ -231,6 +234,15 @@ func (s *Server) StreamInfo(ctx context.Context, streamUUID string) *api.StreamP
 		JoinPolicy:  info.join.JoinPolicy,
 		StartedAt:   info.startedAt,
 	}
+}
+
+func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan error) {
+	err := <-intChan
+	if err != nil {
+		logrus.Errorf("stream %s has been interrupted: %v", streamUUID, err)
+	}
+
+	s.streams.Delete(streamUUID)
 }
 
 func connectToStream(address string, tryCount int) (*rpc.Client, error) {
