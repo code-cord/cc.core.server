@@ -412,6 +412,17 @@ func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject str
 	}, nil
 }
 
+// StreamKey returns stream public key info.
+func (s *Server) StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicKey, error) {
+	streamValue, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
+	}
+	streamData := streamValue.(streamInfo)
+
+	return streamData.rsaKeys.publicKey, nil
+}
+
 func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan error) {
 	err := <-intChan
 	if err != nil {

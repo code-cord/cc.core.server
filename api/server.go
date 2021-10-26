@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/rsa"
 	"time"
 )
 
@@ -25,6 +26,7 @@ type Server interface {
 	StreamParticipants(ctx context.Context, streamUUID string) ([]Participant, error)
 	FinishStream(ctx context.Context, streamUUID string) error
 	NewStreamHostToken(ctx context.Context, streamUUID, subject string) (*StreamAuthInfo, error)
+	StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicKey, error)
 }
 
 // ServerInfo represents server info model.

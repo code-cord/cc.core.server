@@ -59,9 +59,6 @@ func New(cfg Config) Router {
 	serverSecureRouter.Path("/stream").Subrouter().
 		Methods(http.MethodPost).
 		HandlerFunc(r.createStream)
-	serverSecureRouter.Path("/stream/{uuid}").
-		Methods(http.MethodDelete).
-		HandlerFunc(r.finishStream)
 	if cfg.SeverSecurityEnabled {
 		serverSecureRouter.Path("/stream/{uuid}/token").
 			Methods(http.MethodGet).
@@ -71,12 +68,20 @@ func New(cfg Config) Router {
 	}
 
 	// stream secure endpoints.
-	r.Path("/stream/{uuid}/participants").
+	streamSecureRouter := r.NewRoute().Subrouter()
+	streamSecureRouter.Use(middleware.StreamAuthMiddleware(cfg.Server, false))
+	streamSecureRouter.Path("/stream/{uuid}/participants").
 		Methods(http.MethodGet).
 		HandlerFunc(r.getStreamParticipants)
-	r.Path("/stream/{uuid}/participants/{participantUUID}/decision").
+
+	streamSecureHostRouter := r.NewRoute().Subrouter()
+	streamSecureHostRouter.Use(middleware.StreamAuthMiddleware(cfg.Server, true))
+	streamSecureHostRouter.Path("/stream/{uuid}/participants/{participantUUID}/decision").
 		Methods(http.MethodGet).
 		HandlerFunc(r.joinParticipantDecision)
+	streamSecureHostRouter.Path("/stream/{uuid}").
+		Methods(http.MethodDelete).
+		HandlerFunc(r.finishStream)
 
 	return r
 }
