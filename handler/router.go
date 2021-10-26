@@ -82,6 +82,9 @@ func New(cfg Config) Router {
 	streamSecureHostRouter.Path("/stream/{uuid}").
 		Methods(http.MethodDelete).
 		HandlerFunc(r.finishStream)
+	streamSecureHostRouter.Path("/stream/{uuid}").
+		Methods(http.MethodPatch).
+		HandlerFunc(r.patchStream)
 
 	return r
 }

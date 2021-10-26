@@ -38,9 +38,13 @@ func ParseJSONRequest(r *http.Request, out interface{}) error {
 	if !ok {
 		return nil
 	}
+	rules := validatorRules.Rules()
+	if len(rules) == 0 {
+		rules["_"] = []string{}
+	}
 
 	opts := govalidator.Options{
-		Rules:           validatorRules.Rules(),
+		Rules:           rules,
 		RequiredDefault: true,
 		Data:            out,
 	}

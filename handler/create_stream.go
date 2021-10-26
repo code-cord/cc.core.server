@@ -52,7 +52,7 @@ func (h *Router) createStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerInfoResponse {
-	return models.StreamOwnerInfoResponse{
+	resp := models.StreamOwnerInfoResponse{
 		UUID:        info.UUID,
 		Name:        info.Name,
 		Description: info.Description,
@@ -68,9 +68,14 @@ func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerI
 			AvatarID: info.Host.AvatarID,
 			IP:       info.Host.IP,
 		},
-		Auth: models.AuthorizationInfo{
+	}
+
+	if info.Auth != nil {
+		resp.Auth = &models.AuthorizationInfo{
 			AccessToken: info.Auth.AccessToken,
 			Type:        info.Auth.Type,
-		},
+		}
 	}
+
+	return resp
 }

@@ -423,6 +423,40 @@ func (s *Server) StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicK
 	return streamData.rsaKeys.publicKey, nil
 }
 
+// PatchStream updates stream info.
+func (s *Server) PatchStream(ctx context.Context, streamUUID string, cfg api.PatchStreamConfig) (
+	*api.StreamOwnerInfo, error) {
+	streamValue, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
+	}
+	streamData := streamValue.(streamInfo)
+
+	if cfg.Name != nil {
+		streamData.name = *cfg.Name
+	}
+
+	if cfg.Description != nil {
+		streamData.description = *cfg.Description
+	}
+
+	if cfg.Join != nil {
+		streamData.join = api.StreamJoinPolicyConfig{
+			JoinPolicy: cfg.Join.JoinPolicy,
+			JoinCode:   cfg.Join.JoinCode,
+		}
+	}
+
+	if cfg.Host != nil {
+		streamData.hostInfo.Username = cfg.Host.Username
+		streamData.hostInfo.AvatarID = cfg.Host.AvatarID
+	}
+
+	s.streams.Store(streamUUID, streamData)
+
+	return buildStreamOwnerInfo(&streamData, streamUUID, ""), nil
+}
+
 func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan error) {
 	err := <-intChan
 	if err != nil {
@@ -448,7 +482,7 @@ func connectToStream(address string, tryCount int) (*rpc.Client, error) {
 }
 
 func buildStreamOwnerInfo(info *streamInfo, streamUUID, accessToken string) *api.StreamOwnerInfo {
-	return &api.StreamOwnerInfo{
+	ownerInfo := api.StreamOwnerInfo{
 		UUID:        streamUUID,
 		Name:        info.name,
 		Description: info.description,
@@ -459,11 +493,16 @@ func buildStreamOwnerInfo(info *streamInfo, streamUUID, accessToken string) *api
 		LaunchMode:  info.launchMode,
 		Host:        info.hostInfo,
 		StartedAt:   info.startedAt,
-		Auth: api.StreamAuthInfo{
+	}
+
+	if accessToken != "" {
+		ownerInfo.Auth = &api.StreamAuthInfo{
 			AccessToken: accessToken,
 			Type:        defaultStreamTokenType,
-		},
+		}
 	}
+
+	return &ownerInfo
 }
 
 func newServerOptions(opt ...Option) (*Options, error) {

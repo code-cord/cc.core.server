@@ -30,6 +30,7 @@ const (
 	errCodeServerPing   = 2000
 	errCodeCreateStream = 2001
 	errCodeFinishStream = 2002
+	errCodeUpdateStream = 2003
 
 	// stream errors 3xxx.
 	errCodeJoinStream              = 3000
@@ -79,6 +80,10 @@ var (
 	ErrFinishStream = Error{
 		Code:    errCodeFinishStream,
 		Message: "could not finish stream",
+	}
+	ErrUpdateStream = Error{
+		Code:    errCodeUpdateStream,
+		Message: "could not update stream info",
 	}
 )
 

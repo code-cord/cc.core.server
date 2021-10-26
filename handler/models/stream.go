@@ -48,7 +48,7 @@ type StreamOwnerInfoResponse struct {
 	IP          string               `json:"ip"`
 	LaunchMode  api.StreamLaunchMode `json:"launchMode"`
 	HostInfo    HostOwnerInfo        `json:"host"`
-	Auth        AuthorizationInfo    `json:"auth"`
+	Auth        *AuthorizationInfo   `json:"auth,omitempty"`
 }
 
 // HostOwnerInfo represents host owner info response.
@@ -93,6 +93,14 @@ type ParticipantResponse struct {
 	Name     string                `json:"name"`
 	AvatarID string                `json:"avatarId"`
 	Status   api.ParticipantStatus `json:"status"`
+}
+
+// PathcStreamRequest represents patch stream request model.
+type PatchStreamRequest struct {
+	Name        *string                `json:"name"`
+	Description *string                `json:"description,omitempty"`
+	Join        *JoinPolicyRequest     `json:"join,omitempty"`
+	Host        *StreamHostInfoRequest `json:"host,omitempty"`
 }
 
 // Rules returns custom validation rules for the request model.
@@ -158,4 +166,45 @@ func (req *ParticipantJoinRequest) Rules() map[string][]string {
 			"max:32",
 		},
 	}
+}
+
+// Rules returns custom validation rules for the request model.
+func (req *PatchStreamRequest) Rules() map[string][]string {
+	// TODO: FIX!!!!
+	rules := map[string][]string{}
+	if req.Name != nil {
+		rules["name"] = []string{
+			"max:2",
+		}
+	}
+
+	if req.Description != nil {
+		rules["description"] = []string{
+			"max:96",
+		}
+	}
+
+	if req.Join != nil {
+		rules["policy"] = []string{
+			fmt.Sprintf("in:%s", strings.Join([]string{
+				string(api.JoinPolicyAuto),
+				string(api.JoinPolicyByCode),
+				string(api.JoinPolicyHostResolve),
+			}, ",")),
+		}
+
+		if req.Join.Policy == api.JoinPolicyByCode {
+			rules["code"] = []string{
+				"digits:6",
+			}
+		}
+	}
+
+	if req.Host != nil {
+		rules["userName"] = []string{
+			"max:32",
+		}
+	}
+
+	return rules
 }

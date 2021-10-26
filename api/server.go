@@ -27,6 +27,8 @@ type Server interface {
 	FinishStream(ctx context.Context, streamUUID string) error
 	NewStreamHostToken(ctx context.Context, streamUUID, subject string) (*StreamAuthInfo, error)
 	StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicKey, error)
+	PatchStream(ctx context.Context, streamUUID string, cfg PatchStreamConfig) (
+		*StreamOwnerInfo, error)
 }
 
 // ServerInfo represents server info model.
@@ -79,7 +81,7 @@ type StreamOwnerInfo struct {
 	IP          string
 	LaunchMode  StreamLaunchMode
 	Host        HostInfo
-	Auth        StreamAuthInfo
+	Auth        *StreamAuthInfo
 }
 
 // HostInfo represents host of the stream info.
@@ -121,4 +123,12 @@ type ParticipantStatus string
 type JoinParticipantDecision struct {
 	JoinAllowed bool
 	AccessToken string
+}
+
+// PatchStreamConfig represents patch stream configuration model.
+type PatchStreamConfig struct {
+	Name        *string
+	Description *string
+	Join        *StreamJoinPolicyConfig
+	Host        *StreamHostConfig
 }
