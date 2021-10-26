@@ -23,6 +23,8 @@ type Server interface {
 	DecideParticipantJoin(
 		ctx context.Context, streamUUID, participantUUID string, joinAllowed bool) error
 	StreamParticipants(ctx context.Context, streamUUID string) ([]Participant, error)
+	FinishStream(ctx context.Context, streamUUID string) error
+	NewStreamHostToken(ctx context.Context, streamUUID, subject string) (*StreamAuthInfo, error)
 }
 
 // ServerInfo represents server info model.
@@ -37,6 +39,7 @@ type ServerInfo struct {
 type StreamConfig struct {
 	Name        string
 	Description string
+	Subject     string
 	Join        StreamJoinPolicyConfig
 	Launch      StreamLaunchConfig
 	Host        StreamHostConfig
@@ -74,6 +77,7 @@ type StreamOwnerInfo struct {
 	IP          string
 	LaunchMode  StreamLaunchMode
 	Host        HostInfo
+	Auth        StreamAuthInfo
 }
 
 // HostInfo represents host of the stream info.
@@ -82,6 +86,12 @@ type HostInfo struct {
 	Username string
 	AvatarID string
 	IP       string
+}
+
+// StreamAuthInfo represents stream authentication info model.
+type StreamAuthInfo struct {
+	AccessToken string
+	Type        string
 }
 
 // StreamPublicInfo represents stream public info model.

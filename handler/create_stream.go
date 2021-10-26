@@ -10,6 +10,11 @@ import (
 )
 
 func (h *Router) createStream(w http.ResponseWriter, r *http.Request) {
+	var subject string
+	if v := r.Context().Value(middleware.ServerSubjectKey); v != nil {
+		subject = v.(string)
+	}
+
 	var req models.CreateStreamRequest
 	if err := middleware.ParseJSONRequest(r, &req); err != nil {
 		middleware.WriteJSONResponse(w, http.StatusBadRequest, err)
@@ -33,6 +38,7 @@ func (h *Router) createStream(w http.ResponseWriter, r *http.Request) {
 			AvatarID: req.Host.AvatarID,
 			IP:       util.GetIP(r),
 		},
+		Subject: subject,
 	})
 	if err != nil {
 		middleware.WriteJSONResponse(w, http.StatusInternalServerError,
@@ -61,6 +67,10 @@ func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerI
 			Username: info.Host.Username,
 			AvatarID: info.Host.AvatarID,
 			IP:       info.Host.IP,
+		},
+		Auth: models.AuthorizationInfo{
+			AccessToken: info.Auth.AccessToken,
+			Type:        info.Auth.Type,
 		},
 	}
 }

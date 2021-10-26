@@ -6,6 +6,10 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io/ioutil"
+	"time"
+
+	"github.com/golang-jwt/jwt"
 )
 
 /*
@@ -101,8 +105,31 @@ func kek(data []byte) {
 }
 
 func main() {
-	data, _ := PrivateKeyToEncryptedPEM(512, "password")
+	/*data, _ := PrivateKeyToEncryptedPEM(512, "password")
 	fmt.Println(string(data))
 
-	kek(data)
+	kek(data)*/
+
+	claims := &jwt.StandardClaims{
+		ExpiresAt: time.Now().UTC().Add(time.Hour).Unix(),
+		Subject:   "azazaz",
+	}
+
+	privateKey, err := ioutil.ReadFile("/home/artsem/Downloads/id_rsa")
+	if err != nil {
+		panic(err)
+	}
+
+	signKey, err := jwt.ParseRSAPrivateKeyFromPEM(privateKey)
+	if err != nil {
+		panic(err)
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	str, err := token.SignedString(signKey)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(str)
 }

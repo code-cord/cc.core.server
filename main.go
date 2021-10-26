@@ -50,6 +50,7 @@ const (
 	defaultStreamPrefixContainer = "code-cord.stream"
 	codeCordBinPathEnv           = "CODE_CORD_PATH"
 	defaultStreamImage           = "code-cord.stream"
+	codeCordServerKeyPathEnv     = "CODE_CORD_SERVER_KEY"
 )
 
 //go:embed build.json
@@ -64,6 +65,8 @@ type serverConfig struct {
 	streamImage           string
 	dataFolder            string
 	maxAvatarSize         int64
+	withSecurityCheck     bool
+	securityKeyPath       string
 	binariesPath          string
 }
 
@@ -172,6 +175,31 @@ func main() {
 				Destination: &cfg.streamImage,
 				Value:       defaultStreamImage,
 			},
+			&cli.BoolFlag{
+				Name: "with-security-check",
+				Aliases: []string{
+					"securely",
+				},
+				Usage:       "Enable server security check",
+				Required:    false,
+				Value:       false,
+				DefaultText: "disabled",
+				Destination: &cfg.withSecurityCheck,
+			},
+			&cli.PathFlag{
+				Name: "security-key",
+				Aliases: []string{
+					"ss-key",
+					"server-key",
+				},
+				Usage:       "Path to server security key file",
+				Required:    false,
+				TakesFile:   true,
+				Destination: &cfg.securityKeyPath,
+				EnvVars: []string{
+					codeCordServerKeyPathEnv,
+				},
+			},
 		},
 	}
 	if err := app.Run(os.Args); err != nil {
@@ -193,7 +221,9 @@ func main() {
 		}
 	}()
 
-	s.Run(context.Background())
+	if err := s.Run(context.Background()); err != nil {
+		logrus.Fatalf("could not run server: %v", err)
+	}
 }
 
 func newServer(cfg serverConfig) (*server.Server, error) {
@@ -202,7 +232,7 @@ func newServer(cfg serverConfig) (*server.Server, error) {
 		return nil, err
 	}
 
-	s := server.New(
+	return server.New(
 		// Default configuration.
 		server.Name(info["name"].(string)),
 		server.Description(info["description"].(string)),
@@ -217,7 +247,7 @@ func newServer(cfg serverConfig) (*server.Server, error) {
 		server.DataFolder(cfg.dataFolder),
 		server.MaxAvatarSize(cfg.maxAvatarSize),
 		server.BinFolder(cfg.binariesPath),
+		server.ServerSecurityEnabled(cfg.withSecurityCheck),
+		server.ServerSecurityKey(cfg.securityKeyPath),
 	)
-
-	return &s, nil
 }

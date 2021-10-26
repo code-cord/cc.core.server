@@ -48,6 +48,7 @@ type StreamOwnerInfoResponse struct {
 	IP          string               `json:"ip"`
 	LaunchMode  api.StreamLaunchMode `json:"launchMode"`
 	HostInfo    HostOwnerInfo        `json:"host"`
+	Auth        AuthorizationInfo    `json:"auth"`
 }
 
 // HostOwnerInfo represents host owner info response.
@@ -56,6 +57,12 @@ type HostOwnerInfo struct {
 	Username string `json:"username"`
 	AvatarID string `json:"avatarId"`
 	IP       string `json:"ip"`
+}
+
+// AuthorizationInfo represents authorization info model.
+type AuthorizationInfo struct {
+	AccessToken string `json:"accessToken"`
+	Type        string `json:"type"`
 }
 
 // StreamPublicInfoResponse represents stream public info response model.

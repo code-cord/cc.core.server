@@ -1,6 +1,10 @@
 package server
 
-import "github.com/sirupsen/logrus"
+import (
+	"crypto/rsa"
+
+	"github.com/sirupsen/logrus"
+)
 
 // Option represents set server option type.
 type Option func(*Options)
@@ -20,6 +24,9 @@ type Options struct {
 	StreamImage           string
 	DataFolder            string
 	MaxAvatarSize         int64
+	ServerSecurityKeyPath string
+	ssKey                 *rsa.PublicKey
+	ServerSecurityEnabled bool
 	BinFolder             string
 }
 
@@ -114,5 +121,19 @@ func BinFolder(folder string) Option {
 func StreamImage(img string) Option {
 	return func(o *Options) {
 		o.StreamImage = img
+	}
+}
+
+// ServerSecurityKey sets server RSA security key.
+func ServerSecurityKey(keyPath string) Option {
+	return func(o *Options) {
+		o.ServerSecurityKeyPath = keyPath
+	}
+}
+
+// ServerSecurityEnabled sets server security state.
+func ServerSecurityEnabled(enabled bool) Option {
+	return func(o *Options) {
+		o.ServerSecurityEnabled = enabled
 	}
 }

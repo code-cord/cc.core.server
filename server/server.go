@@ -5,9 +5,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/rpc"
@@ -32,6 +32,7 @@ const (
 	defaultServerFolder                = ".__data"
 	defaultConnectToStreamRetryCount   = 3
 	defaultConnectToStreamRetryTimeout = 2 * time.Second
+	defaultStreamTokenType             = "bearer"
 )
 
 // Server represents code-cord server implementation model.
@@ -55,27 +56,31 @@ type streamInfo struct {
 	participants           *sync.Map
 	pendingParticipantsMap *sync.Map
 	rsaKeys                *rsaKeys
+	subject                string
 }
 
 type rsaKeys struct {
-	privateKeyBytes []byte
-	publicKeyBytes  []byte
+	privateKey *rsa.PrivateKey
+	publicKey  *rsa.PublicKey
 }
 
 // New returns new Server instance.
-func New(opt ...Option) Server {
-	opts := newServerOptions(opt...)
+func New(opt ...Option) (*Server, error) {
+	opts, err := newServerOptions(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("could not init server: %v", err)
+	}
 
 	avatarService, err := NewAvatarService(AvatarServiceConfig{
 		DataFolder:  opts.DataFolder,
 		MaxFileSize: opts.MaxAvatarSize,
 	})
 	if err != nil {
-		logrus.Fatalf("could not init avatar service: %v", err)
+		return nil, fmt.Errorf("could not init avatar service: %v", err)
 	}
 
 	s := Server{
-		opts: opts,
+		opts: *opts,
 		httpServer: &http.Server{
 			Addr: opts.Address,
 		},
@@ -85,11 +90,13 @@ func New(opt ...Option) Server {
 		logrus.SetLevel(opts.logLevel)
 	}
 	s.httpServer.Handler = handler.New(handler.Config{
-		Server: &s,
-		Avatar: avatarService,
+		Server:               &s,
+		Avatar:               avatarService,
+		SeverSecurityEnabled: s.opts.ServerSecurityEnabled,
+		ServerSecurityKey:    s.opts.ssKey,
 	})
 
-	return s
+	return &s, nil
 }
 
 // Run runs server.
@@ -97,6 +104,7 @@ func (s *Server) Run(ctx context.Context) (err error) {
 	defer func() {
 		if err == http.ErrServerClosed {
 			err = nil
+			return
 		}
 
 		err = fmt.Errorf("could not serve http server: %v", err)
@@ -171,6 +179,7 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 
 	var streamHandler api.Stream
 	streamUUID := uuid.New().String()
+	hostUUID := uuid.New().String()
 	switch cfg.Launch.Mode {
 	case api.StreamLaunchModeSingletonApp:
 		streamHandler = stream.NewStandaloneStream(stream.StandaloneStreamConfig{
@@ -188,6 +197,12 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 		})
 	default:
 		return nil, fmt.Errorf("invalid launch mode: %v", cfg.Launch.Mode)
+	}
+
+	// generate host access token.
+	token, err := generateStreamAccessToken(streamUUID, hostUUID, true, keys.privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not authorize host user for the stream: %v", err)
 	}
 
 	streamLaunchInfo, err := streamHandler.Start(ctx)
@@ -224,7 +239,7 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 		join:        cfg.Join,
 		rcpClient:   rcpClient,
 		hostInfo: api.HostInfo{
-			UUID:     uuid.New().String(),
+			UUID:     hostUUID,
 			Username: cfg.Host.Username,
 			AvatarID: cfg.Host.AvatarID,
 			IP:       cfg.Host.IP,
@@ -233,10 +248,11 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 		participants:           new(sync.Map),
 		pendingParticipantsMap: new(sync.Map),
 		rsaKeys:                keys,
+		subject:                cfg.Subject,
 	}
 	s.streams.Store(streamUUID, newStreamInfo)
 
-	return buildStreamOwnerInfo(&newStreamInfo, streamUUID), nil
+	return buildStreamOwnerInfo(&newStreamInfo, streamUUID, token), nil
 }
 
 // StreamInfo returns public stream info by stream UUID.
@@ -278,8 +294,8 @@ func (s *Server) JoinParticipant(
 			return
 		}
 
-		accessToken, err := generateParticipantAccessToken(
-			streamUUID, p.UUID, streamData.rsaKeys.privateKeyBytes)
+		accessToken, err := generateStreamAccessToken(
+			streamUUID, p.UUID, false, streamData.rsaKeys.privateKey)
 		if err != nil {
 			joinErr = fmt.Errorf("could not generate access token: %v", err)
 			return
@@ -350,6 +366,52 @@ func (s *Server) StreamParticipants(ctx context.Context, streamUUID string) (
 	return participants, nil
 }
 
+// FinishStream finishes running stream.
+func (s *Server) FinishStream(ctx context.Context, streamUUID string) error {
+	streamValue, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return fmt.Errorf("could not find stream with UUID %s", streamUUID)
+	}
+	streamData := streamValue.(streamInfo)
+
+	if err := streamData.rcpClient.Close(); err != nil {
+		return fmt.Errorf("could not close connection to the %s stream: %v", streamUUID, err)
+	}
+
+	if err := streamData.Stream.Stop(ctx); err != nil {
+		return err
+	}
+
+	s.streams.Delete(streamUUID)
+
+	return nil
+}
+
+// NewStreamHostToken generates new access token for the host of the stream.
+func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject string) (
+	*api.StreamAuthInfo, error) {
+	streamValue, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
+	}
+	streamData := streamValue.(streamInfo)
+
+	if streamData.subject == "" || streamData.subject != subject {
+		return nil, errors.New("could not verify stream subject")
+	}
+
+	token, err := generateStreamAccessToken(
+		streamUUID, streamData.hostInfo.UUID, true, streamData.rsaKeys.privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("could not generate access token: %v", err)
+	}
+
+	return &api.StreamAuthInfo{
+		AccessToken: token,
+		Type:        defaultStreamTokenType,
+	}, nil
+}
+
 func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan error) {
 	err := <-intChan
 	if err != nil {
@@ -374,7 +436,7 @@ func connectToStream(address string, tryCount int) (*rpc.Client, error) {
 	return nil, errors.New("connection timeout")
 }
 
-func buildStreamOwnerInfo(info *streamInfo, streamUUID string) *api.StreamOwnerInfo {
+func buildStreamOwnerInfo(info *streamInfo, streamUUID, accessToken string) *api.StreamOwnerInfo {
 	return &api.StreamOwnerInfo{
 		UUID:        streamUUID,
 		Name:        info.name,
@@ -386,10 +448,14 @@ func buildStreamOwnerInfo(info *streamInfo, streamUUID string) *api.StreamOwnerI
 		LaunchMode:  info.launchMode,
 		Host:        info.hostInfo,
 		StartedAt:   info.startedAt,
+		Auth: api.StreamAuthInfo{
+			AccessToken: accessToken,
+			Type:        defaultStreamTokenType,
+		},
 	}
 }
 
-func newServerOptions(opt ...Option) Options {
+func newServerOptions(opt ...Option) (*Options, error) {
 	var opts Options
 
 	for _, o := range opt {
@@ -413,15 +479,36 @@ func newServerOptions(opt ...Option) Options {
 	if opts.DataFolder == "" {
 		dir, err := os.Getwd()
 		if err != nil {
-			logrus.Fatalf("could not detect working directory path: %v", err)
+			return nil, fmt.Errorf("could not detect working directory path: %v", err)
 		}
 		opts.DataFolder = path.Join(dir, defaultServerFolder)
 		if err := os.MkdirAll(opts.DataFolder, 0700); err != nil && !os.IsExist(err) {
-			logrus.Panicf("could not create server folders: %v", err)
+			return nil, fmt.Errorf("could not create server data folders: %v", err)
 		}
 	}
 
-	return opts
+	if !opts.ServerSecurityEnabled {
+		logrus.Warn("Server security is disabled!" +
+			"Please don't use this server in prod, or specify `--with-security-check` flag")
+	}
+
+	if opts.ServerSecurityEnabled {
+		if opts.ServerSecurityKeyPath == "" {
+			return nil, errors.New(
+				"please provide path to security key file or disable `--with-security-check` flag")
+		}
+		data, err := ioutil.ReadFile(opts.ServerSecurityKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("could not read %s key file: %v", opts.ServerSecurityKeyPath, err)
+		}
+		publicKey, err := jwt.ParseRSAPublicKeyFromPEM(data)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse public key data: %v", err)
+		}
+		opts.ssKey = publicKey
+	}
+
+	return &opts, nil
 }
 
 func defaultServerAddress() string {
@@ -438,29 +525,22 @@ func generateRSAKeys() (*rsaKeys, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not generate private RSA key: %v", err)
 	}
-	publickey := &privatekey.PublicKey
-
-	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privatekey)
-
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publickey)
-	if err != nil {
-		return nil, fmt.Errorf("could not generate public RSA key: %v", err)
-	}
 
 	return &rsaKeys{
-		privateKeyBytes: privateKeyBytes,
-		publicKeyBytes:  publicKeyBytes,
+		privateKey: privatekey,
+		publicKey:  &privatekey.PublicKey,
 	}, nil
 }
 
-func generateParticipantAccessToken(
-	streamUUID, participantUUID string, privateKey []byte) (string, error) {
+func generateStreamAccessToken(
+	streamUUID, participantUUID string, isHost bool, privateKey *rsa.PrivateKey) (string, error) {
 	claims := &jwt.MapClaims{
 		"streamUUID": streamUUID,
 		"UUID":       participantUUID,
+		"host":       isHost,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	return token.SignedString(privateKey)
 }
 

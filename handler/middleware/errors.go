@@ -24,15 +24,18 @@ const (
 	errCodeInvalidRequest      = 1000
 	errCodeInvalidRequestParam = 1001
 	errCodeSSEUpgrade          = 1002
+	errCodeAuth                = 1003
 
 	// server errors 2xxx.
 	errCodeServerPing   = 2000
 	errCodeCreateStream = 2001
+	errCodeFinishStream = 2002
 
 	// stream errors 3xxx.
 	errCodeJoinStream              = 3000
 	errCodeFetchStreamParticipants = 3001
 	errCodeDecideParticipantJoin   = 3002
+	errCodeGenerateToken           = 3003
 )
 
 // Custom error (aka unexpected error).
@@ -57,6 +60,10 @@ var (
 		Code:    errCodeSSEUpgrade,
 		Message: "could not upgrade SSE connection",
 	}
+	ErrAuth = Error{
+		Code:    errCodeAuth,
+		Message: "could not authorize request",
+	}
 )
 
 // Server error.
@@ -68,6 +75,10 @@ var (
 	ErrCreateStream = Error{
 		Code:    errCodeCreateStream,
 		Message: "could not create stream",
+	}
+	ErrFinishStream = Error{
+		Code:    errCodeFinishStream,
+		Message: "could not finish stream",
 	}
 )
 
@@ -84,6 +95,10 @@ var (
 	ErrDecideParticipantJoin = Error{
 		Code:    errCodeDecideParticipantJoin,
 		Message: "could not change participant join status",
+	}
+	ErrGenerateAccessToken = Error{
+		Code:    errCodeGenerateToken,
+		Message: "could not generate access token",
 	}
 )
 

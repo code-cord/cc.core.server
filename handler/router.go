@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"crypto/rsa"
 	"net/http"
 
 	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/gorilla/mux"
 )
 
@@ -16,8 +18,10 @@ type Router struct {
 
 // Config represents router configuration model.
 type Config struct {
-	Server api.Server
-	Avatar api.Avatar
+	Server               api.Server
+	Avatar               api.Avatar
+	SeverSecurityEnabled bool
+	ServerSecurityKey    *rsa.PublicKey
 }
 
 // New returns new Router instance.
@@ -28,6 +32,7 @@ func New(cfg Config) Router {
 		avatar: cfg.Avatar,
 	}
 
+	// public endpoints.
 	r.Path("/").
 		Methods(http.MethodGet).
 		HandlerFunc(r.getServerInfo)
@@ -42,15 +47,30 @@ func New(cfg Config) Router {
 		Methods(http.MethodGet).
 		HandlerFunc(r.getAvatar)
 
-	r.Path("/stream").
-		Methods(http.MethodPost).
-		HandlerFunc(r.createStream)
 	r.Path("/stream/{uuid}").
 		Methods(http.MethodGet).
 		HandlerFunc(r.getStreamInfo)
 	r.Path("/stream/{uuid}/join").
 		Methods(http.MethodPost).
 		HandlerFunc(r.joinStream)
+
+	// server secure endpoints.
+	serverSecureRouter := r.NewRoute().Subrouter()
+	serverSecureRouter.Path("/stream").Subrouter().
+		Methods(http.MethodPost).
+		HandlerFunc(r.createStream)
+	serverSecureRouter.Path("/stream/{uuid}").
+		Methods(http.MethodDelete).
+		HandlerFunc(r.finishStream)
+	if cfg.SeverSecurityEnabled {
+		serverSecureRouter.Path("/stream/{uuid}/token").
+			Methods(http.MethodGet).
+			HandlerFunc(r.newAuthToken)
+
+		serverSecureRouter.Use(middleware.ServerAuthMiddleware(cfg.ServerSecurityKey))
+	}
+
+	// stream secure endpoints.
 	r.Path("/stream/{uuid}/participants").
 		Methods(http.MethodGet).
 		HandlerFunc(r.getStreamParticipants)
