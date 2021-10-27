@@ -114,6 +114,12 @@ func StreamAuthMiddleware(server api.Server, hostSpecific bool) func(http.Handle
 				participant.IsHost = isHost.(bool)
 			}
 
+			if streamUUID != participant.StreamUUID {
+				WriteJSONResponse(w, http.StatusForbidden,
+					ErrAuth.New("access denied"))
+				return
+			}
+
 			if hostSpecific && !participant.IsHost {
 				WriteJSONResponse(w, http.StatusUnauthorized,
 					ErrAuth.New("only host of the stream has access to this endpoint"))

@@ -57,7 +57,6 @@ func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerI
 		Name:        info.Name,
 		Description: info.Description,
 		JoinPolicy:  info.JoinPolicy,
-		JoinCode:    info.JoinCode,
 		StartedAt:   info.StartedAt,
 		Port:        info.Port,
 		IP:          info.IP,
@@ -68,6 +67,10 @@ func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerI
 			AvatarID: info.Host.AvatarID,
 			IP:       info.Host.IP,
 		},
+	}
+
+	if info.JoinPolicy == api.JoinPolicyByCode {
+		resp.JoinCode = info.JoinCode
 	}
 
 	if info.Auth != nil {

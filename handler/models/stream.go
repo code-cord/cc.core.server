@@ -32,7 +32,7 @@ type StreamConfigRequest struct {
 
 // StreamHostInfoRequest represents stream host info request model.
 type StreamHostInfoRequest struct {
-	Name     string `json:"userName"`
+	Name     string `json:"username"`
 	AvatarID string `json:"avatarId"`
 }
 
@@ -43,7 +43,7 @@ type StreamOwnerInfoResponse struct {
 	Description string               `json:"description"`
 	StartedAt   time.Time            `json:"startedAt"`
 	JoinPolicy  api.JoinPolicy       `json:"joinPolicy"`
-	JoinCode    string               `json:"joinCode"`
+	JoinCode    string               `json:"joinCode,omitempty"`
 	Port        int                  `json:"port"`
 	IP          string               `json:"ip"`
 	LaunchMode  api.StreamLaunchMode `json:"launchMode"`
@@ -97,8 +97,8 @@ type ParticipantResponse struct {
 
 // PathcStreamRequest represents patch stream request model.
 type PatchStreamRequest struct {
-	Name        *string                `json:"name"`
-	Description *string                `json:"description,omitempty"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
 	Join        *JoinPolicyRequest     `json:"join,omitempty"`
 	Host        *StreamHostInfoRequest `json:"host,omitempty"`
 }
@@ -124,13 +124,14 @@ func (req *CreateStreamRequest) Rules() map[string][]string {
 			}, ",")),
 		},
 		// host info rules.
-		"userName": {
+		"username": {
 			"required",
 			"max:32",
 		},
 	}
 	if req.Join.Policy == api.JoinPolicyByCode {
 		rules["code"] = []string{
+			"required",
 			"digits:6",
 		}
 	}
@@ -170,15 +171,15 @@ func (req *ParticipantJoinRequest) Rules() map[string][]string {
 
 // Rules returns custom validation rules for the request model.
 func (req *PatchStreamRequest) Rules() map[string][]string {
-	// TODO: FIX!!!!
 	rules := map[string][]string{}
-	if req.Name != nil {
+	if req.Name != "" {
 		rules["name"] = []string{
-			"max:2",
+			"required",
+			"max:32",
 		}
 	}
 
-	if req.Description != nil {
+	if req.Description != "" {
 		rules["description"] = []string{
 			"max:96",
 		}
@@ -195,13 +196,15 @@ func (req *PatchStreamRequest) Rules() map[string][]string {
 
 		if req.Join.Policy == api.JoinPolicyByCode {
 			rules["code"] = []string{
+				"required",
 				"digits:6",
 			}
 		}
 	}
 
 	if req.Host != nil {
-		rules["userName"] = []string{
+		rules["username"] = []string{
+			"required",
 			"max:32",
 		}
 	}
