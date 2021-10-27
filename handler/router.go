@@ -13,13 +13,11 @@ import (
 type Router struct {
 	*mux.Router
 	server api.Server
-	avatar api.Avatar
 }
 
 // Config represents router configuration model.
 type Config struct {
 	Server               api.Server
-	Avatar               api.Avatar
 	SeverSecurityEnabled bool
 	ServerSecurityKey    *rsa.PublicKey
 }
@@ -29,7 +27,6 @@ func New(cfg Config) Router {
 	r := Router{
 		Router: mux.NewRouter(),
 		server: cfg.Server,
-		avatar: cfg.Avatar,
 	}
 
 	// public endpoints.

@@ -11,7 +11,7 @@ import (
 func (h *Router) getAvatar(w http.ResponseWriter, r *http.Request) {
 	avatarID := mux.Vars(r)["id"]
 
-	imgData, contentType, err := h.avatar.ByID(r.Context(), avatarID)
+	imgData, contentType, err := h.server.AvatarByID(r.Context(), avatarID)
 	if err != nil {
 		if os.IsNotExist(err) {
 			w.WriteHeader(http.StatusNotFound)

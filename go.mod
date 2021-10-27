@@ -3,6 +3,7 @@ module github.com/code-cord/cc.core.server
 go 1.17
 
 require (
+	github.com/boltdb/bolt v1.3.1
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/docker/docker v20.10.9+incompatible
 	github.com/docker/go-connections v0.4.0

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/rsa"
+	"io"
 	"time"
 )
 
@@ -29,6 +30,14 @@ type Server interface {
 	StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicKey, error)
 	PatchStream(ctx context.Context, streamUUID string, cfg PatchStreamConfig) (
 		*StreamOwnerInfo, error)
+	NewAvatar(ctx context.Context, contentType string, r io.Reader) (string, error)
+	AvatarRestrictions() AvatarRestrictions
+	AvatarByID(ctx context.Context, avatarID string) ([]byte, string, error)
+}
+
+// AvatarRestrictions represents avatar restrictions model.
+type AvatarRestrictions struct {
+	MaxFileSize int64
 }
 
 // ServerInfo represents server info model.

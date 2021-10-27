@@ -26,35 +26,8 @@ const (
 	jpegContentType        = "image/jpeg"
 )
 
-// AvatarService represents avatar service implementation model.
-type AvatarService struct {
-	destFolder  string
-	maxFileSize int64
-}
-
-// AvatarServiceConfig represents avatar service configuration model.
-type AvatarServiceConfig struct {
-	DataFolder  string
-	MaxFileSize int64
-}
-
-// NewAvatarService returns new avatar service instance.
-func NewAvatarService(cfg AvatarServiceConfig) (*AvatarService, error) {
-	fullPath := path.Join(cfg.DataFolder, avatarsFolder)
-	if err := os.MkdirAll(fullPath, 0700); err != nil && err != os.ErrExist {
-		return nil, err
-	}
-
-	s := AvatarService{
-		destFolder:  fullPath,
-		maxFileSize: cfg.MaxFileSize,
-	}
-
-	return &s, nil
-}
-
-// New stores a new avatar image.
-func (a *AvatarService) New(ctx context.Context, contentType string, r io.Reader) (string, error) {
+// NewAvatar stores a new avatar image.
+func (s *Server) NewAvatar(ctx context.Context, contentType string, r io.Reader) (string, error) {
 	var (
 		img     image.Image
 		err     error
@@ -79,7 +52,7 @@ func (a *AvatarService) New(ctx context.Context, contentType string, r io.Reader
 	img = resize.Resize(defaultAvatarImageSize, defaultAvatarImageSize, img, resize.Lanczos3)
 
 	avatarID := uuid.New().String()
-	avatarPath := path.Join(a.destFolder, fmt.Sprintf("%s.%s", avatarID, fileExt))
+	avatarPath := path.Join(s.opts.avatarsFolder, fmt.Sprintf("%s.%s", avatarID, fileExt))
 	out, err := os.Create(avatarPath)
 	if err != nil {
 		return "", fmt.Errorf("could not create image: %v", err)
@@ -99,17 +72,17 @@ func (a *AvatarService) New(ctx context.Context, contentType string, r io.Reader
 	return avatarID, nil
 }
 
-// Restrictions returns restrictions for the avatar image.
-func (a *AvatarService) Restrictions() api.AvatarRestrictions {
+// AvatarRestrictions returns restrictions for the avatar image.
+func (s *Server) AvatarRestrictions() api.AvatarRestrictions {
 	return api.AvatarRestrictions{
-		MaxFileSize: a.maxFileSize,
+		MaxFileSize: s.opts.MaxAvatarSize,
 	}
 }
 
 // ByID returns image data by ID.
-func (a *AvatarService) ByID(ctx context.Context, avatarID string) (
+func (s *Server) AvatarByID(ctx context.Context, avatarID string) (
 	imgData []byte, contentType string, err error) {
-	avatarPath := path.Join(a.destFolder, avatarID)
+	avatarPath := path.Join(s.opts.avatarsFolder, avatarID)
 
 	matches, err := filepath.Glob(fmt.Sprintf("%s.*", avatarPath))
 	if err != nil {

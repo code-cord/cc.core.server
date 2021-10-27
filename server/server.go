@@ -20,7 +20,9 @@ import (
 
 	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler"
-	"github.com/code-cord/cc.core.server/stream"
+	apiHandler "github.com/code-cord/cc.core.server/handler/api"
+	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/storage"
 	"github.com/code-cord/cc.core.server/util"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
@@ -29,17 +31,25 @@ import (
 
 const (
 	defaultServerHost                  = "127.0.0.1"
+	defaultAPIServerHost               = "127.0.0.1"
+	defaultAPIServerPort               = 7070
 	defaultServerFolder                = ".__data"
 	defaultConnectToStreamRetryCount   = 3
 	defaultConnectToStreamRetryTimeout = 2 * time.Second
 	defaultStreamTokenType             = "bearer"
+	defaultAvatarsFolderName           = "avatars"
+	defaultStreamStorageName           = "stream.db"
+	streamBucket                       = "stream"
+	defaultAvatarStorageName           = "avatar.db"
 )
 
 // Server represents code-cord server implementation model.
 type Server struct {
-	opts       Options
-	httpServer *http.Server
-	streams    *sync.Map
+	opts          Options
+	httpServer    *http.Server
+	apiHttpServer *http.Server
+	streams       *sync.Map
+	storage       *storage.Storage
 }
 
 type streamInfo struct {
@@ -71,29 +81,64 @@ func New(opt ...Option) (*Server, error) {
 		return nil, fmt.Errorf("could not init server: %v", err)
 	}
 
-	avatarService, err := NewAvatarService(AvatarServiceConfig{
-		DataFolder:  opts.DataFolder,
-		MaxFileSize: opts.MaxAvatarSize,
+	db, err := storage.New(storage.Config{
+		DBPath:        path.Join(opts.DataFolder, defaultStreamStorageName),
+		Buckets:       []string{streamBucket},
+		DefaultBucket: streamBucket,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not init avatar service: %v", err)
+		return nil, fmt.Errorf("could not connect to storage: %v", err)
 	}
+
+	/////
+	mm := []models.HostOwnerInfo{
+		{
+			Username: "1",
+			IP:       "1",
+		},
+		{
+			Username: "2",
+			IP:       "2",
+		},
+		{
+			Username: "3",
+			IP:       "3",
+		},
+	}
+	for i := range mm {
+		err := db.Default().Insert(mm[i].Username, mm[i])
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	var mm3 []models.HostOwnerInfo
+	if err := db.Default().All(&mm3); err != nil {
+		panic(err)
+	}
+	////
 
 	s := Server{
 		opts: *opts,
 		httpServer: &http.Server{
 			Addr: opts.Address,
 		},
+		apiHttpServer: &http.Server{
+			Addr: fmt.Sprintf("%s:%d", defaultAPIServerHost, defaultAPIServerPort),
+		},
 		streams: new(sync.Map),
+		storage: db,
 	}
 	if opts.LogLevel != "" {
 		logrus.SetLevel(opts.logLevel)
 	}
 	s.httpServer.Handler = handler.New(handler.Config{
 		Server:               &s,
-		Avatar:               avatarService,
 		SeverSecurityEnabled: s.opts.ServerSecurityEnabled,
 		ServerSecurityKey:    s.opts.ssKey,
+	})
+	s.apiHttpServer.Handler = apiHandler.New(apiHandler.Config{
+		Server: &s,
 	})
 
 	return &s, nil
@@ -101,16 +146,24 @@ func New(opt ...Option) (*Server, error) {
 
 // Run runs server.
 func (s *Server) Run(ctx context.Context) (err error) {
-	defer func() {
-		if err == http.ErrServerClosed {
-			err = nil
-			return
+	// run API http server.
+	go func() {
+		logrus.Infof("starting API server at %s", s.apiHttpServer.Addr)
+		if err := s.apiHttpServer.ListenAndServe(); err != http.ErrServerClosed {
+			logrus.Fatalf("API server exited with error: %v", err)
 		}
-
-		err = fmt.Errorf("could not serve http server: %v", err)
 	}()
 
-	logrus.Infof("server started at %s", s.httpServer.Addr)
+	// run core http server.
+	logrus.Infof("starting server at %s", s.httpServer.Addr)
+
+	defer func() {
+		if err != http.ErrServerClosed {
+			logrus.Fatalf("server exited with error: %v", err)
+		}
+
+		err = nil
+	}()
 
 	if certFile, kFile := s.opts.TLSCertFile, s.opts.TLSKeyFile; certFile != "" && kFile != "" {
 		err = s.httpServer.ListenAndServeTLS(certFile, kFile)
@@ -142,6 +195,10 @@ func (s *Server) Stop(ctx context.Context) error {
 		errs = append(errs, fmt.Sprintf("could not stop http server: %v", err))
 	}
 
+	if err := s.apiHttpServer.Shutdown(ctx); err != nil {
+		errs = append(errs, fmt.Sprintf("could not stop API http server: %v", err))
+	}
+
 	if len(errs) != 0 {
 		return errors.New(strings.Join(errs, ";"))
 	}
@@ -162,115 +219,6 @@ func (s *Server) Info() api.ServerInfo {
 // Ping pings server.
 func (s *Server) Ping(ctx context.Context) error {
 	return nil
-}
-
-// NewStream starts a new stream.
-func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
-	*api.StreamOwnerInfo, error) {
-	// generate stream access keys.
-	keys, err := generateRSAKeys()
-	if err != nil {
-		return nil, fmt.Errorf("could not generate stream access keys: %v", err)
-	}
-
-	if cfg.Launch.Mode == "" {
-		cfg.Launch.Mode = api.StreamLaunchModeSingletonApp
-	}
-
-	var streamHandler api.Stream
-	streamUUID := uuid.New().String()
-	hostUUID := uuid.New().String()
-	switch cfg.Launch.Mode {
-	case api.StreamLaunchModeSingletonApp:
-		streamHandler = stream.NewStandaloneStream(stream.StandaloneStreamConfig{
-			PreferedIP:   cfg.Launch.PreferredIP,
-			PreferedPort: cfg.Launch.PreferredPort,
-			BinPath:      s.opts.BinFolder,
-		})
-	case api.StreamLaunchModeDockerContainer:
-		streamHandler = stream.NewDockerContainerStream(stream.DockerContainerStreamConfig{
-			StreamUUID:      streamUUID,
-			ContainerPrefix: s.opts.StreamContainerPrefix,
-			DockerImage:     s.opts.StreamImage,
-			PreferedPort:    cfg.Launch.PreferredPort,
-			PreferedIP:      cfg.Launch.PreferredIP,
-		})
-	default:
-		return nil, fmt.Errorf("invalid launch mode: %v", cfg.Launch.Mode)
-	}
-
-	// generate host access token.
-	token, err := generateStreamAccessToken(streamUUID, hostUUID, true, keys.privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("could not authorize host user for the stream: %v", err)
-	}
-
-	streamLaunchInfo, err := streamHandler.Start(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not run stream instance: %v", err)
-	}
-
-	var startStreamErr error
-	defer func() {
-		if startStreamErr != nil {
-			if err := streamHandler.Stop(ctx); err != nil {
-				logrus.Errorf("could not stop container: %v", err)
-			}
-		}
-	}()
-
-	tcpAddress := fmt.Sprintf("%s:%d", streamLaunchInfo.IP, streamLaunchInfo.Port)
-	rcpClient, err := connectToStream(tcpAddress, defaultConnectToStreamRetryCount)
-	if err != nil {
-		startStreamErr = fmt.Errorf("could not connect to the running stream: %v", err)
-		return nil, startStreamErr
-	}
-
-	// listening stream interrupt event.
-	go s.listenStreamInterruptEvent(streamUUID, streamHandler.InterruptNotification())
-
-	newStreamInfo := streamInfo{
-		Stream:      streamHandler,
-		startedAt:   time.Now().UTC(),
-		name:        cfg.Name,
-		description: cfg.Description,
-		ip:          streamLaunchInfo.IP,
-		port:        streamLaunchInfo.Port,
-		join:        cfg.Join,
-		rcpClient:   rcpClient,
-		hostInfo: api.HostInfo{
-			UUID:     hostUUID,
-			Username: cfg.Host.Username,
-			AvatarID: cfg.Host.AvatarID,
-			IP:       cfg.Host.IP,
-		},
-		launchMode:             cfg.Launch.Mode,
-		participants:           new(sync.Map),
-		pendingParticipantsMap: new(sync.Map),
-		rsaKeys:                keys,
-		subject:                cfg.Subject,
-	}
-	s.streams.Store(streamUUID, newStreamInfo)
-
-	return buildStreamOwnerInfo(&newStreamInfo, streamUUID, token), nil
-}
-
-// StreamInfo returns public stream info by stream UUID.
-func (s *Server) StreamInfo(ctx context.Context, streamUUID string) *api.StreamPublicInfo {
-	stream, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return nil
-	}
-
-	info := stream.(streamInfo)
-
-	return &api.StreamPublicInfo{
-		UUID:        streamUUID,
-		Name:        info.name,
-		Description: info.description,
-		JoinPolicy:  info.join.JoinPolicy,
-		StartedAt:   info.startedAt,
-	}
 }
 
 // JoinParticipant joins a new particiant to the stream.
@@ -366,27 +314,6 @@ func (s *Server) StreamParticipants(ctx context.Context, streamUUID string) (
 	return participants, nil
 }
 
-// FinishStream finishes running stream.
-func (s *Server) FinishStream(ctx context.Context, streamUUID string) error {
-	streamValue, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return fmt.Errorf("could not find stream with UUID %s", streamUUID)
-	}
-	streamData := streamValue.(streamInfo)
-
-	if err := streamData.rcpClient.Close(); err != nil {
-		return fmt.Errorf("could not close connection to the %s stream: %v", streamUUID, err)
-	}
-
-	if err := streamData.Stream.Stop(ctx); err != nil {
-		return err
-	}
-
-	s.streams.Delete(streamUUID)
-
-	return nil
-}
-
 // NewStreamHostToken generates new access token for the host of the stream.
 func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject string) (
 	*api.StreamAuthInfo, error) {
@@ -410,51 +337,6 @@ func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject str
 		AccessToken: token,
 		Type:        defaultStreamTokenType,
 	}, nil
-}
-
-// StreamKey returns stream public key info.
-func (s *Server) StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicKey, error) {
-	streamValue, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
-	}
-	streamData := streamValue.(streamInfo)
-
-	return streamData.rsaKeys.publicKey, nil
-}
-
-// PatchStream updates stream info.
-func (s *Server) PatchStream(ctx context.Context, streamUUID string, cfg api.PatchStreamConfig) (
-	*api.StreamOwnerInfo, error) {
-	streamValue, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
-	}
-	streamData := streamValue.(streamInfo)
-
-	if cfg.Name != nil {
-		streamData.name = *cfg.Name
-	}
-
-	if cfg.Description != nil {
-		streamData.description = *cfg.Description
-	}
-
-	if cfg.Join != nil {
-		streamData.join = api.StreamJoinPolicyConfig{
-			JoinPolicy: cfg.Join.JoinPolicy,
-			JoinCode:   cfg.Join.JoinCode,
-		}
-	}
-
-	if cfg.Host != nil {
-		streamData.hostInfo.Username = cfg.Host.Username
-		streamData.hostInfo.AvatarID = cfg.Host.AvatarID
-	}
-
-	s.streams.Store(streamUUID, streamData)
-
-	return buildStreamOwnerInfo(&streamData, streamUUID, ""), nil
 }
 
 func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan error) {
@@ -536,6 +418,12 @@ func newServerOptions(opt ...Option) (*Options, error) {
 			return nil, fmt.Errorf("could not create server data folders: %v", err)
 		}
 	}
+
+	avatarsFolder := path.Join(opts.DataFolder, defaultAvatarsFolderName)
+	if err := os.MkdirAll(avatarsFolder, 0700); err != nil && err != os.ErrExist {
+		return nil, fmt.Errorf("could not access the avatars folder: %v", err)
+	}
+	opts.avatarsFolder = avatarsFolder
 
 	if !opts.ServerSecurityEnabled {
 		logrus.Warn("Server security is disabled!" +

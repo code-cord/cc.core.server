@@ -16,7 +16,7 @@ func (h *Router) addAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	restrictions := h.avatar.Restrictions()
+	restrictions := h.server.AvatarRestrictions()
 	if restrictions.MaxFileSize != 0 && restrictions.MaxFileSize <= fileHeader.Size {
 		middleware.WriteJSONResponse(w, http.StatusBadRequest,
 			middleware.ErrInvalidRequest.New(
@@ -31,7 +31,7 @@ func (h *Router) addAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	avatarID, err := h.avatar.New(r.Context(), contentTypeHeaders[0], file)
+	avatarID, err := h.server.NewAvatar(r.Context(), contentTypeHeaders[0], file)
 	if err != nil {
 		middleware.WriteJSONResponse(w, http.StatusBadRequest,
 			middleware.ErrInvalidRequest.New(err.Error()))

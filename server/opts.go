@@ -18,16 +18,18 @@ type Options struct {
 	TLSCertFile           string
 	TLSKeyFile            string
 	LogLevel              string
-	logLevel              logrus.Level
 	Meta                  map[string]interface{}
 	StreamContainerPrefix string
 	StreamImage           string
 	DataFolder            string
 	MaxAvatarSize         int64
 	ServerSecurityKeyPath string
-	ssKey                 *rsa.PublicKey
 	ServerSecurityEnabled bool
 	BinFolder             string
+
+	logLevel      logrus.Level
+	ssKey         *rsa.PublicKey
+	avatarsFolder string
 }
 
 // Name sets server name option.
