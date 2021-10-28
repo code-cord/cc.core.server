@@ -11,24 +11,29 @@ type Option func(*Options)
 
 // Options represents server options model.
 type Options struct {
-	Name                  string
-	Description           string
-	Version               string
-	Address               string
-	TLSCertFile           string
-	TLSKeyFile            string
-	LogLevel              string
-	Meta                  map[string]interface{}
-	StreamContainerPrefix string
-	StreamImage           string
-	DataFolder            string
-	MaxAvatarSize         int64
-	ServerSecurityKeyPath string
-	ServerSecurityEnabled bool
-	BinFolder             string
+	Name                         string
+	Description                  string
+	Version                      string
+	Meta                         map[string]interface{}
+	Address                      string
+	TLSCertFile                  string
+	TLSKeyFile                   string
+	LogLevel                     string
+	StreamContainerPrefix        string
+	StreamImage                  string
+	StreamImageRegistryAuth      string
+	PullImageOnStartup           bool
+	DataFolder                   string
+	MaxAvatarSize                int64
+	ServerSecurityPublicKeyPath  string
+	ServerSecurityPrivateKeyPath string
+	ServerSecurityEnabled        bool
+	BinFolder                    string
 
-	logLevel logrus.Level
-	ssKey    *rsa.PublicKey
+	logLevel   logrus.Level
+	publicKey  *rsa.PublicKey
+	privateKey *rsa.PrivateKey
+	tlsEnabled bool
 }
 
 // Name sets server name option.
@@ -125,10 +130,17 @@ func StreamImage(img string) Option {
 	}
 }
 
-// ServerSecurityKey sets server RSA security key.
-func ServerSecurityKey(keyPath string) Option {
+// ServerPublicKey sets server RSA public security key.
+func ServerPublicKey(keyPath string) Option {
 	return func(o *Options) {
-		o.ServerSecurityKeyPath = keyPath
+		o.ServerSecurityPublicKeyPath = keyPath
+	}
+}
+
+// ServerPrivateKey sets server RSA private security key.
+func ServerPrivateKey(keyPath string) Option {
+	return func(o *Options) {
+		o.ServerSecurityPrivateKeyPath = keyPath
 	}
 }
 
@@ -136,5 +148,19 @@ func ServerSecurityKey(keyPath string) Option {
 func ServerSecurityEnabled(enabled bool) Option {
 	return func(o *Options) {
 		o.ServerSecurityEnabled = enabled
+	}
+}
+
+// PullImageOnStartup enable or disable stream docker image pulling on server startup.
+func PullImageOnStartup(pull bool) Option {
+	return func(o *Options) {
+		o.PullImageOnStartup = pull
+	}
+}
+
+// StreamImageRegistryAuth is the base64 encoded credentials for the pulling stream image.
+func StreamImageRegistryAuth(auth string) Option {
+	return func(o *Options) {
+		o.StreamImageRegistryAuth = auth
 	}
 }

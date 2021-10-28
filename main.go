@@ -13,61 +13,36 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-/*
-import (
-	"bufio"
-	"log"
-	"net/rpc/jsonrpc"
-	"os"
-)
-
-type Reply struct {
-	Data string
-}
-
-func main() {
-	client, err := jsonrpc.Dial("tcp", "localhost:12345")
-	if err != nil {
-		log.Fatal(err)
-	}
-	in := bufio.NewReader(os.Stdin)
-	for {
-		line, _, err := in.ReadLine()
-		if err != nil {
-			log.Fatal(err)
-		}
-		var reply Reply
-		err = client.Call("Listener.GetLine", line, &reply)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("Reply: %v, Data: %v", reply, reply.Data)
-	}
-}
-*/
-
 const (
+	tlsCertFilePathEnv              = "CODE_CORD_TLS_CERT"
+	tlsKeyFilePathEnv               = "CODE_CORD_TLS_KEY"
+	dataFolderPathEnv               = "CODE_CORD_DATA"
+	codeCordBinPathEnv              = "CODE_CORD_PATH"
+	codeCordServerPublicKeyPathEnv  = "CODE_CORD_SERVER_PUBLIC_KEY"
+	codeCordServerPrivateKeyPathEnv = "CODE_CORD_SERVER_PRIVATE_KEY"
+
 	defaultStreamPrefixContainer = "code-cord.stream"
-	codeCordBinPathEnv           = "CODE_CORD_PATH"
 	defaultStreamImage           = "code-cord.stream"
-	codeCordServerKeyPathEnv     = "CODE_CORD_SERVER_KEY"
 )
 
 //go:embed build.json
 var buildInfo []byte
 
 type serverConfig struct {
-	address               string
-	tlsCertFilePath       string
-	tlsKeyFilePath        string
-	logLevel              string
-	streamContainerPrefix string
-	streamImage           string
-	dataFolder            string
-	maxAvatarSize         int64
-	withSecurityCheck     bool
-	securityKeyPath       string
-	binariesPath          string
+	address                 string
+	tlsCertFilePath         string
+	tlsKeyFilePath          string
+	logLevel                string
+	streamContainerPrefix   string
+	streamImage             string
+	streamImageRegistryAuth string
+	pullImageOnStartup      bool
+	dataFolder              string
+	maxAvatarSize           int64
+	withSecurityCheck       bool
+	securityPublicKeyPath   string
+	securityPrivateKeyPath  string
+	binariesPath            string
 }
 
 func main() {
@@ -76,6 +51,9 @@ func main() {
 	app := &cli.App{
 		Name:  "code-cord-server",
 		Usage: "manage code-cord stream server",
+		Action: func(c *cli.Context) error {
+			return nil
+		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name: "address",
@@ -89,23 +67,23 @@ func main() {
 				Required:    false,
 			},
 			&cli.PathFlag{
-				Name: "tls-cert",
-				Aliases: []string{
-					"cert",
+				Name:      "tls-cert",
+				Usage:     "TLS cert file path (for https connections)",
+				Required:  false,
+				TakesFile: true,
+				EnvVars: []string{
+					tlsCertFilePathEnv,
 				},
-				Usage:       "TLS cert file path (for https connections)",
-				Required:    false,
-				TakesFile:   true,
 				Destination: &cfg.tlsCertFilePath,
 			},
 			&cli.PathFlag{
-				Name: "tls-key",
-				Aliases: []string{
-					"key",
+				Name:      "tls-key",
+				Usage:     "TLS key file path (for https connections)",
+				Required:  false,
+				TakesFile: true,
+				EnvVars: []string{
+					tlsKeyFilePathEnv,
 				},
-				Usage:       "TLS key file path (for https connections)",
-				Required:    false,
-				TakesFile:   true,
 				Destination: &cfg.tlsKeyFilePath,
 			},
 			&cli.StringFlag{
@@ -113,17 +91,15 @@ func main() {
 				Aliases: []string{
 					"lvl",
 					"level",
-					"logger",
 				},
 				Usage:       "Log level (\"panic\", \"fatal\", \"error\", \"warn\", \"info\", \"debug\" or \"trace\")",
 				Required:    false,
-				DefaultText: "info",
+				DefaultText: logrus.InfoLevel.String(),
 				Destination: &cfg.logLevel,
 			},
 			&cli.StringFlag{
 				Name: "stream-container-prefix",
 				Aliases: []string{
-					"prefix",
 					"container-prefix",
 				},
 				Usage:       "Stream container prefix for streams running inside docker containers",
@@ -132,16 +108,50 @@ func main() {
 				Destination: &cfg.streamContainerPrefix,
 				Value:       defaultStreamPrefixContainer,
 			},
-			&cli.PathFlag{
-				Name: "data",
+			&cli.StringFlag{
+				Name: "stream-image",
 				Aliases: []string{
-					"folder",
-					"data-folder",
+					"img",
+					"docker-img",
 				},
-				Usage:       "Data folder to store server data",
+				Usage:       "Stream docker image to run inside the container",
 				Required:    false,
-				Destination: &cfg.tlsCertFilePath,
-				DefaultText: "current/dir/__data/...",
+				DefaultText: defaultStreamImage,
+				Destination: &cfg.streamImage,
+				Value:       defaultStreamImage,
+			},
+			&cli.StringFlag{
+				Name: "stream-image-registry-auth",
+				Aliases: []string{
+					"img-registry-auth",
+				},
+				Usage:       "The base64 encoded credentials for the stream container registry",
+				Required:    false,
+				Destination: &cfg.streamImageRegistryAuth,
+			},
+			&cli.BoolFlag{
+				Name: "pull-image-on-startup",
+				Aliases: []string{
+					"pull-image",
+				},
+				Usage:       "Automatically pull stream docker image on server startup",
+				Required:    false,
+				Value:       false,
+				DefaultText: "disabled",
+				Destination: &cfg.pullImageOnStartup,
+			},
+			&cli.PathFlag{
+				Name: "data-folder",
+				Aliases: []string{
+					"data",
+				},
+				Usage:       "Data folder to store server data with read and write permissions",
+				Required:    false,
+				Destination: &cfg.dataFolder,
+				DefaultText: ".data folder in the current dir",
+				EnvVars: []string{
+					dataFolderPathEnv,
+				},
 			},
 			&cli.Int64Flag{
 				Name:        "avatar-size",
@@ -149,55 +159,56 @@ func main() {
 				Required:    false,
 				Destination: &cfg.maxAvatarSize,
 				DefaultText: "no restrictions",
+				Value:       -1,
 			},
 			&cli.PathFlag{
-				Name: "cc-path",
+				Name: "bin-path",
 				Aliases: []string{
 					"bin",
-					"code-cord-bin",
 				},
-				Usage:       "Folder path to code-cord binaries",
+				Usage:       "Folder path to code-cord binaries (required only if stream will be running as standalone application)",
 				Required:    false,
 				Destination: &cfg.binariesPath,
 				EnvVars: []string{
 					codeCordBinPathEnv,
 				},
-			},
-			&cli.StringFlag{
-				Name: "stream-image",
-				Aliases: []string{
-					"img",
-					"stream-img",
-				},
-				Usage:       "Stream image to run inside the container",
-				Required:    false,
-				DefaultText: defaultStreamImage,
-				Destination: &cfg.streamImage,
-				Value:       defaultStreamImage,
+				DefaultText: "current directory",
 			},
 			&cli.BoolFlag{
 				Name: "with-security-check",
 				Aliases: []string{
 					"securely",
 				},
-				Usage:       "Enable server security check",
+				Usage:       "Enable server security check for incoming requests (eg. create/update/stop stream)",
 				Required:    false,
 				Value:       false,
 				DefaultText: "disabled",
 				Destination: &cfg.withSecurityCheck,
 			},
 			&cli.PathFlag{
-				Name: "security-key",
+				Name: "server-public-key",
 				Aliases: []string{
-					"ss-key",
-					"server-key",
+					"pub-key",
 				},
-				Usage:       "Path to server security key file",
+				Usage:       "Path to server public RSA key file",
 				Required:    false,
 				TakesFile:   true,
-				Destination: &cfg.securityKeyPath,
+				Destination: &cfg.securityPublicKeyPath,
 				EnvVars: []string{
-					codeCordServerKeyPathEnv,
+					codeCordServerPublicKeyPathEnv,
+				},
+			},
+			&cli.PathFlag{
+				Name: "server-private-key",
+				Aliases: []string{
+					"priv-key",
+				},
+				Usage:       "Path to server private RSA key file",
+				Required:    false,
+				TakesFile:   true,
+				Destination: &cfg.securityPrivateKeyPath,
+				EnvVars: []string{
+					codeCordServerPrivateKeyPathEnv,
 				},
 			},
 		},
@@ -244,10 +255,13 @@ func newServer(cfg serverConfig) (*server.Server, error) {
 		server.LogLevel(cfg.logLevel),
 		server.StreamContainerPrefix(cfg.streamContainerPrefix),
 		server.StreamImage(cfg.streamImage),
+		server.StreamImageRegistryAuth(cfg.streamImageRegistryAuth),
+		server.PullImageOnStartup(cfg.pullImageOnStartup),
 		server.DataFolder(cfg.dataFolder),
 		server.MaxAvatarSize(cfg.maxAvatarSize),
 		server.BinFolder(cfg.binariesPath),
 		server.ServerSecurityEnabled(cfg.withSecurityCheck),
-		server.ServerSecurityKey(cfg.securityKeyPath),
+		server.ServerPrivateKey(cfg.securityPrivateKeyPath),
+		server.ServerPublicKey(cfg.securityPublicKeyPath),
 	)
 }

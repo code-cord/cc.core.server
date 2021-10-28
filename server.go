@@ -57,6 +57,32 @@ func main() {
 		jsonrpc.ServeConn(conn)
 	}
 }
+
+
+func (s *Server) PPP() {
+	client, err := jsonrpc.Dial("tcp", "0.0.0.0:30300")
+	if err != nil {
+		log.Fatal(err)
+	}
+	in := bufio.NewReader(os.Stdin)
+	for {
+		line, _, err := in.ReadLine()
+		if err != nil {
+			log.Fatal(err)
+		}
+		var reply Reply
+		err = client.Call("Listener.GetLine", line, &reply)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("Reply: %v, Data: %v", reply, reply.Data)
+	}
+}
+
+type Reply struct {
+	Data string
+}
+
 */
 
 func PrivateKeyToEncryptedPEM(bits int, pwd string) ([]byte, error) {
@@ -104,7 +130,7 @@ func kek(data []byte) {
 	}*/
 }
 
-func main() {
+func main2() {
 	/*data, _ := PrivateKeyToEncryptedPEM(512, "password")
 	fmt.Println(string(data))
 

@@ -17,7 +17,7 @@ func (h *Router) addAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	restrictions := h.server.AvatarRestrictions()
-	if restrictions.MaxFileSize != 0 && restrictions.MaxFileSize <= fileHeader.Size {
+	if restrictions.MaxFileSize > 0 && restrictions.MaxFileSize <= fileHeader.Size {
 		middleware.WriteJSONResponse(w, http.StatusBadRequest,
 			middleware.ErrInvalidRequest.New(
 				fmt.Sprintf("file size should be less than %d bytes", restrictions.MaxFileSize)))

@@ -16,7 +16,7 @@ type participantInfo struct {
 	AvatarID    string                `json:"avatar,omitempty"`
 	IP          string                `json:"ip"`
 	Status      api.ParticipantStatus `json:"status"`
-	pendingChan chan bool             `json"-"`
+	pendingChan chan bool
 }
 
 // JoinParticipant joins a new particiant to the stream.

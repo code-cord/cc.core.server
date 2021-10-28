@@ -20,6 +20,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	defaultConnectToStreamRetryCount   = 3
+	defaultConnectToStreamRetryTimeout = 2 * time.Second
+	defaultStreamTokenType             = "bearer"
+)
+
 type streamModule struct {
 	api.Stream
 	rpcClient           *rpc.Client

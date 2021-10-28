@@ -1,40 +1,33 @@
 package server
 
 import (
-	"bufio"
 	"context"
 	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
-	"net/rpc/jsonrpc"
 	"os"
 	"path"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler"
 	apiHandler "github.com/code-cord/cc.core.server/handler/api"
 	"github.com/code-cord/cc.core.server/storage"
 	"github.com/code-cord/cc.core.server/util"
-	"github.com/dgrijalva/jwt-go"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
+	"github.com/golang-jwt/jwt"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	defaultServerHost                  = "127.0.0.1"
-	defaultAPIServerHost               = "127.0.0.1"
-	defaultAPIServerPort               = 7070
-	defaultServerFolder                = ".__data"
-	defaultConnectToStreamRetryCount   = 3
-	defaultConnectToStreamRetryTimeout = 2 * time.Second
-	defaultStreamTokenType             = "bearer"
-	defaultAvatarsFolderName           = "avatars"
-
+	defaultServerHost             = "127.0.0.1"
+	defaultAPIServerHost          = "127.0.0.1"
+	defaultAPIServerPort          = 7070
+	defaultServerFolder           = ".data"
 	defaultStreamStorageName      = "stream.db"
 	defaultAvatarStorageName      = "avatar.db"
 	defaultParticipantStorageName = "participant.db"
@@ -112,7 +105,7 @@ func New(opt ...Option) (*Server, error) {
 	s.httpServer.Handler = handler.New(handler.Config{
 		Server:               &s,
 		SeverSecurityEnabled: s.opts.ServerSecurityEnabled,
-		ServerSecurityKey:    s.opts.ssKey,
+		//ServerSecurityKey:    s.opts.ssKey,
 	})
 	s.apiHttpServer.Handler = apiHandler.New(apiHandler.Config{
 		Server: &s,
@@ -142,8 +135,8 @@ func (s *Server) Run(ctx context.Context) (err error) {
 		err = nil
 	}()
 
-	if certFile, kFile := s.opts.TLSCertFile, s.opts.TLSKeyFile; certFile != "" && kFile != "" {
-		err = s.httpServer.ListenAndServeTLS(certFile, kFile)
+	if s.opts.tlsEnabled {
+		err = s.httpServer.ListenAndServeTLS(s.opts.TLSCertFile, s.opts.TLSKeyFile)
 		return
 	}
 
@@ -210,6 +203,14 @@ func newServerOptions(opt ...Option) (*Options, error) {
 		opts.Address = defaultServerAddress()
 	}
 
+	if opts.TLSCertFile == "" && opts.TLSKeyFile != "" {
+		return nil, fmt.Errorf("you must provide the TLS cert file along with the TLS key file")
+	}
+	if opts.TLSCertFile != "" && opts.TLSKeyFile == "" {
+		return nil, fmt.Errorf("you must provide the TLS key file along with the TLS cert file")
+	}
+	opts.tlsEnabled = opts.TLSCertFile != "" && opts.TLSKeyFile != ""
+
 	if opts.LogLevel != "" {
 		lvl, err := logrus.ParseLevel(opts.LogLevel)
 		if err != nil {
@@ -220,15 +221,35 @@ func newServerOptions(opt ...Option) (*Options, error) {
 		opts.logLevel = lvl
 	}
 
+	if opts.PullImageOnStartup {
+		cli, err := client.NewClientWithOpts()
+		if err != nil {
+			return nil, fmt.Errorf("could not init docker cli client: %v", err)
+		}
+
+		logrus.Infof("pulling %s docker image...", opts.StreamImage)
+
+		_, err = cli.ImagePull(context.Background(), opts.StreamImage, types.ImagePullOptions{
+			All:          true,
+			RegistryAuth: opts.StreamImageRegistryAuth,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("could not pull %s docker image: %v", opts.StreamImage, err)
+		}
+	}
+
 	if opts.DataFolder == "" {
 		dir, err := os.Getwd()
 		if err != nil {
 			return nil, fmt.Errorf("could not detect working directory path: %v", err)
 		}
 		opts.DataFolder = path.Join(dir, defaultServerFolder)
-		if err := os.MkdirAll(opts.DataFolder, 0700); err != nil && !os.IsExist(err) {
-			return nil, fmt.Errorf("could not create server data folders: %v", err)
-		}
+	}
+	if err := os.MkdirAll(opts.DataFolder, 0700); err != nil && !os.IsExist(err) {
+		return nil, fmt.Errorf("could not create server data folders: %v", err)
+	}
+	if err := setHidden(opts.DataFolder); err != nil {
+		logrus.Warnf("could not mark %s directory as hidden: %v", opts.DataFolder, err)
 	}
 
 	if !opts.ServerSecurityEnabled {
@@ -237,19 +258,46 @@ func newServerOptions(opt ...Option) (*Options, error) {
 	}
 
 	if opts.ServerSecurityEnabled {
-		if opts.ServerSecurityKeyPath == "" {
+		if opts.ServerSecurityPublicKeyPath == "" || opts.ServerSecurityPrivateKeyPath == "" {
 			return nil, errors.New(
-				"please provide path to security key file or disable `--with-security-check` flag")
+				"please provide path to server key files or disable `--with-security-check` flag")
 		}
-		data, err := ioutil.ReadFile(opts.ServerSecurityKeyPath)
+
+		// parse public key data.
+		data, err := ioutil.ReadFile(opts.ServerSecurityPublicKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("could not read %s key file: %v", opts.ServerSecurityKeyPath, err)
+			return nil, fmt.Errorf("could not read %s public key file: %v",
+				opts.ServerSecurityPublicKeyPath, err)
 		}
 		publicKey, err := jwt.ParseRSAPublicKeyFromPEM(data)
 		if err != nil {
 			return nil, fmt.Errorf("could not parse public key data: %v", err)
 		}
-		opts.ssKey = publicKey
+		opts.publicKey = publicKey
+
+		// parse private key data.
+		data, err = ioutil.ReadFile(opts.ServerSecurityPrivateKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("could not read %s private key file: %v",
+				opts.ServerSecurityPrivateKeyPath, err)
+		}
+		privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(data)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse private key data: %v", err)
+		}
+		opts.privateKey = privateKey
+
+		if !opts.privateKey.PublicKey.Equal(opts.publicKey) {
+			return nil, errors.New("private key doesn't match public key")
+		}
+	}
+
+	if opts.BinFolder == "" {
+		dir, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("could not detect working directory path: %v", err)
+		}
+		opts.BinFolder = dir
 	}
 
 	return &opts, nil
@@ -263,31 +311,3 @@ func defaultServerAddress() string {
 
 	return fmt.Sprintf("%s:%d", defaultServerHost, freePort)
 }
-
-///////////////
-
-func (s *Server) PPP() {
-	client, err := jsonrpc.Dial("tcp", "0.0.0.0:30300")
-	if err != nil {
-		log.Fatal(err)
-	}
-	in := bufio.NewReader(os.Stdin)
-	for {
-		line, _, err := in.ReadLine()
-		if err != nil {
-			log.Fatal(err)
-		}
-		var reply Reply
-		err = client.Call("Listener.GetLine", line, &reply)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("Reply: %v, Data: %v", reply, reply.Data)
-	}
-}
-
-type Reply struct {
-	Data string
-}
-
-////////////////
