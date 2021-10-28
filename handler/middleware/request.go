@@ -8,16 +8,6 @@ import (
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
-// ValidatorRules represents validator rules interface for incoming http request model.
-type ValidatorRules interface {
-	Rules() map[string][]string
-}
-
-// ValidatorMessages represents validator messages interface for incoming http request model.
-type ValidatorMessages interface {
-	Messages() map[string][]string
-}
-
 // Validator represents validator interface.
 type Validator interface {
 	Validate() error

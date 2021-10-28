@@ -20,7 +20,6 @@ type Config struct {
 	Server               api.Server
 	SeverSecurityEnabled bool
 	ServerPublicKey      *rsa.PublicKey
-	ServerPrivateKey     *rsa.PrivateKey
 }
 
 // New returns new Router instance.
