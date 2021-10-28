@@ -1,11 +1,12 @@
 package models
 
 import (
-	"fmt"
-	"strings"
+	"regexp"
 	"time"
 
 	"github.com/code-cord/cc.core.server/api"
+	validation "github.com/go-ozzo/ozzo-validation/v4"
+	"github.com/go-ozzo/ozzo-validation/v4/is"
 )
 
 // CreateStreamRequest represents create stream request model.
@@ -98,117 +99,115 @@ type ParticipantResponse struct {
 
 // PathcStreamRequest represents patch stream request model.
 type PatchStreamRequest struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
+	Name        *string                `json:"name,omitempty"`
+	Description *string                `json:"description,omitempty"`
 	Join        *JoinPolicyRequest     `json:"join,omitempty"`
 	Host        *StreamHostInfoRequest `json:"host,omitempty"`
 }
 
-// Rules returns custom validation rules for the request model.
-func (req *CreateStreamRequest) Rules() map[string][]string {
-	rules := map[string][]string{
-		// stream rules.
-		"name": {
-			"required",
-			"max:42",
-		},
-		"description": {
-			"max:96",
-		},
-		// join policy rules.
-		"policy": {
-			"required",
-			fmt.Sprintf("in:%s", strings.Join([]string{
-				string(api.JoinPolicyAuto),
-				string(api.JoinPolicyByCode),
-				string(api.JoinPolicyHostResolve),
-			}, ",")),
-		},
-		// host info rules.
-		"username": {
-			"required",
-			"max:32",
-		},
+// Validate validates request model.
+func (req *CreateStreamRequest) Validate() error {
+	errs := validation.Errors{
+		"name": validation.Validate(req.Name,
+			validation.Required,
+			validation.Length(5, 32),
+		),
+		"description": validation.Validate(req.Description,
+			validation.Length(0, 96),
+		),
+		"join.policy": validation.Validate(req.Join.Policy,
+			validation.Required,
+			validation.In(
+				api.JoinPolicyAuto,
+				api.JoinPolicyByCode,
+				api.JoinPolicyHostResolve,
+			),
+		),
+		"host.username": validation.Validate(req.Host.Name,
+			validation.Required,
+			validation.Length(5, 32),
+		),
 	}
+
 	if req.Join.Policy == api.JoinPolicyByCode {
-		rules["code"] = []string{
-			"required",
-			"digits:6",
-		}
+		errs["join.code"] = validation.Validate(req.Join.Code,
+			validation.Required,
+			validation.Match(regexp.MustCompile("^[0-9]{6}$")),
+		)
 	}
 
-	// stream config rules.
 	if req.Stream.LaunchMode != "" {
-		rules["launch"] = []string{
-			fmt.Sprintf("in:%s", strings.Join([]string{
-				string(api.StreamLaunchModeDockerContainer),
-				string(api.StreamLaunchModeSingletonApp),
-			}, ",")),
-		}
+		errs["stream.launch"] = validation.Validate(req.Stream.LaunchMode,
+			validation.In(
+				api.StreamLaunchModeDockerContainer,
+				api.StreamLaunchModeSingletonApp,
+			),
+		)
 	}
+
 	if req.Stream.PreferredIP != "" {
-		rules["ip"] = []string{
-			"ip",
-		}
+		errs["stream.ip"] = validation.Validate(req.Stream.PreferredIP,
+			is.IP,
+		)
 	}
+
 	if req.Stream.PreferredPort != 0 {
-		rules["port"] = []string{
-			"min:0",
-		}
+		errs["stream.port"] = validation.Validate(req.Stream.PreferredPort,
+			validation.Min(0),
+		)
 	}
 
-	return rules
+	return errs.Filter()
 }
 
-// Rules returns custom validation rules for the request model.
-func (req *ParticipantJoinRequest) Rules() map[string][]string {
-	return map[string][]string{
-		"name": {
-			"required",
-			"max:32",
-		},
-	}
+// Validate validates request model.
+func (req *ParticipantJoinRequest) Validate() error {
+	return validation.Errors{
+		"name": validation.Validate(req.Name,
+			validation.Required,
+			validation.Length(5, 32),
+		),
+	}.Filter()
 }
 
-// Rules returns custom validation rules for the request model.
-func (req *PatchStreamRequest) Rules() map[string][]string {
-	rules := map[string][]string{}
-	if req.Name != "" {
-		rules["name"] = []string{
-			"required",
-			"max:32",
-		}
+// Validate validates request model.
+func (req *PatchStreamRequest) Validate() error {
+	errs := validation.Errors{}
+
+	if req.Name != nil {
+		errs["name"] = validation.Validate(req.Name,
+			validation.Length(5, 32),
+		)
 	}
 
-	if req.Description != "" {
-		rules["description"] = []string{
-			"max:96",
-		}
+	if req.Description != nil {
+		errs["description"] = validation.Validate(req.Description,
+			validation.Length(0, 96),
+		)
 	}
 
 	if req.Join != nil {
-		rules["policy"] = []string{
-			fmt.Sprintf("in:%s", strings.Join([]string{
-				string(api.JoinPolicyAuto),
-				string(api.JoinPolicyByCode),
-				string(api.JoinPolicyHostResolve),
-			}, ",")),
-		}
+		errs["join.policy"] = validation.Validate(req.Join.Policy,
+			validation.In(
+				api.JoinPolicyAuto,
+				api.JoinPolicyByCode,
+				api.JoinPolicyHostResolve,
+			),
+		)
 
 		if req.Join.Policy == api.JoinPolicyByCode {
-			rules["code"] = []string{
-				"required",
-				"digits:6",
-			}
+			errs["join.code"] = validation.Validate(req.Join.Code,
+				validation.Required,
+				validation.Match(regexp.MustCompile("^[0-9]{6}$")),
+			)
 		}
 	}
 
 	if req.Host != nil {
-		rules["username"] = []string{
-			"required",
-			"max:32",
-		}
+		errs["host.username"] = validation.Validate(req.Join.Code,
+			validation.Length(5, 32),
+		)
 	}
 
-	return rules
+	return errs.Filter()
 }

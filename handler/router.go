@@ -19,7 +19,8 @@ type Router struct {
 type Config struct {
 	Server               api.Server
 	SeverSecurityEnabled bool
-	ServerSecurityKey    *rsa.PublicKey
+	ServerPublicKey      *rsa.PublicKey
+	ServerPrivateKey     *rsa.PrivateKey
 }
 
 // New returns new Router instance.
@@ -61,7 +62,7 @@ func New(cfg Config) Router {
 			Methods(http.MethodGet).
 			HandlerFunc(r.newAuthToken)
 
-		serverSecureRouter.Use(middleware.ServerAuthMiddleware(cfg.ServerSecurityKey))
+		serverSecureRouter.Use(middleware.ServerAuthMiddleware(cfg.ServerPublicKey))
 	}
 
 	// stream secure endpoints.

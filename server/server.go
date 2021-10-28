@@ -105,7 +105,8 @@ func New(opt ...Option) (*Server, error) {
 	s.httpServer.Handler = handler.New(handler.Config{
 		Server:               &s,
 		SeverSecurityEnabled: s.opts.ServerSecurityEnabled,
-		//ServerSecurityKey:    s.opts.ssKey,
+		ServerPublicKey:      s.opts.publicKey,
+		ServerPrivateKey:     s.opts.privateKey,
 	})
 	s.apiHttpServer.Handler = apiHandler.New(apiHandler.Config{
 		Server: &s,

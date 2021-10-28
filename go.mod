@@ -6,17 +6,18 @@ require (
 	github.com/boltdb/bolt v1.3.1
 	github.com/docker/docker v20.10.9+incompatible
 	github.com/docker/go-connections v0.4.0
+	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/google/uuid v1.2.0
 	github.com/gorilla/mux v1.8.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
 	github.com/sirupsen/logrus v1.8.1
 	github.com/urfave/cli/v2 v2.3.0
-	gopkg.in/thedevsaddam/govalidator.v1 v1.9.10
 )
 
 require (
 	github.com/Microsoft/go-winio v0.5.1 // indirect
+	github.com/asaskevich/govalidator v0.0.0-20200108200545-475eaeb16496 // indirect
 	github.com/containerd/containerd v1.5.7 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect

@@ -18,13 +18,9 @@ func (h *Router) patchStream(w http.ResponseWriter, r *http.Request) {
 
 	streamUUID := mux.Vars(r)["uuid"]
 
-	cfg := api.PatchStreamConfig{}
-	if req.Name != "" {
-		cfg.Name = &req.Name
-	}
-
-	if req.Description != "" {
-		cfg.Description = &req.Description
+	cfg := api.PatchStreamConfig{
+		Name:        req.Name,
+		Description: req.Description,
 	}
 
 	if req.Join != nil {

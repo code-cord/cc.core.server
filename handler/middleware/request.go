@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"gopkg.in/thedevsaddam/govalidator.v1"
+	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
 // ValidatorRules represents validator rules interface for incoming http request model.
@@ -16,6 +16,11 @@ type ValidatorRules interface {
 // ValidatorMessages represents validator messages interface for incoming http request model.
 type ValidatorMessages interface {
 	Messages() map[string][]string
+}
+
+// Validator represents validator interface.
+type Validator interface {
+	Validate() error
 }
 
 // WriteJSONResponse writes JSON encoded body to http response.
@@ -35,40 +40,26 @@ func ParseJSONRequest(r *http.Request, out interface{}) error {
 		return ErrInvalidRequest.New(err.Error())
 	}
 
-	validatorRules, ok := (out).(ValidatorRules)
+	validator, ok := out.(Validator)
 	if !ok {
 		return nil
 	}
-	rules := validatorRules.Rules()
-	if len(rules) == 0 {
-		rules["_"] = []string{}
-	}
 
-	opts := govalidator.Options{
-		Rules:           rules,
-		RequiredDefault: true,
-		Data:            out,
-	}
-
-	if validatorMessages, ok := (out).(ValidatorMessages); ok {
-		opts.Messages = validatorMessages.Messages()
-	}
-
-	validationResult := govalidator.New(opts).ValidateStruct()
-
-	if len(validationResult) == 0 {
+	err = validator.Validate()
+	if err == nil {
 		return nil
 	}
 
-	if parseErr := validationResult.Get("_error"); parseErr != "" {
-		return ErrInvalidRequest.New(parseErr)
+	validationErrs, ok := err.(validation.Errors)
+	if !ok {
+		return ErrInvalidRequest.New(err.Error())
 	}
 
-	paramErrs := make([]RequestParamErrDetails, 0, len(validationResult))
-	for param, errs := range validationResult {
+	paramErrs := make([]RequestParamErrDetails, 0, len(validationErrs))
+	for param, errs := range validationErrs {
 		paramErrs = append(paramErrs, RequestParamErrDetails{
 			Param:  param,
-			Errors: errs,
+			Errors: []string{errs.Error()},
 		})
 	}
 
