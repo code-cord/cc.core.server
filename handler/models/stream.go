@@ -72,6 +72,7 @@ type StreamPublicInfoResponse struct {
 	Description string         `json:"description"`
 	JoinPolicy  api.JoinPolicy `json:"joinPolicy"`
 	StartedAt   time.Time      `json:"startedAt"`
+	FinishedAt  *time.Time     `json:"finishedAt,omitempty"`
 }
 
 // ParticipantJoinRequest represents participant join request model.

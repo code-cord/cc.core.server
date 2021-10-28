@@ -3,14 +3,12 @@ package server
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
 	"path"
@@ -24,7 +22,6 @@ import (
 	"github.com/code-cord/cc.core.server/storage"
 	"github.com/code-cord/cc.core.server/util"
 	"github.com/dgrijalva/jwt-go"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -38,37 +35,23 @@ const (
 	defaultStreamTokenType             = "bearer"
 	defaultAvatarsFolderName           = "avatars"
 
-	defaultStreamStorageName = "stream.db"
-	defaultAvatarStorageName = "avatar.db"
-	streamBucket             = "stream"
-	avatarBucket             = "avatar"
+	defaultStreamStorageName      = "stream.db"
+	defaultAvatarStorageName      = "avatar.db"
+	defaultParticipantStorageName = "participant.db"
+	streamBucket                  = "stream"
+	avatarBucket                  = "avatar"
+	participantBucket             = "participant"
 )
 
 // Server represents code-cord server implementation model.
 type Server struct {
-	opts          Options
-	httpServer    *http.Server
-	apiHttpServer *http.Server
-	streams       *sync.Map
-	streamStorage *storage.Storage
-	avatarStorage *storage.Storage
-}
-
-type streamInfo struct {
-	api.Stream
-	name                   string
-	description            string
-	ip                     string
-	port                   int
-	join                   api.StreamJoinPolicyConfig
-	rcpClient              *rpc.Client
-	startedAt              time.Time
-	hostInfo               api.HostInfo
-	launchMode             api.StreamLaunchMode
-	participants           *sync.Map
-	pendingParticipantsMap *sync.Map
-	rsaKeys                *rsaKeys
-	subject                string
+	opts               Options
+	httpServer         *http.Server
+	apiHttpServer      *http.Server
+	streams            *sync.Map
+	streamStorage      *storage.Storage
+	avatarStorage      *storage.Storage
+	participantStorage *storage.Storage
 }
 
 type rsaKeys struct {
@@ -101,6 +84,15 @@ func New(opt ...Option) (*Server, error) {
 		return nil, fmt.Errorf("could not connect to avatar storage: %v", err)
 	}
 
+	participantDB, err := storage.New(storage.Config{
+		DBPath:        path.Join(opts.DataFolder, defaultParticipantStorageName),
+		Buckets:       []string{participantBucket},
+		DefaultBucket: participantBucket,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not connect to participant storage: %v", err)
+	}
+
 	s := Server{
 		opts: *opts,
 		httpServer: &http.Server{
@@ -109,9 +101,10 @@ func New(opt ...Option) (*Server, error) {
 		apiHttpServer: &http.Server{
 			Addr: fmt.Sprintf("%s:%d", defaultAPIServerHost, defaultAPIServerPort),
 		},
-		streams:       new(sync.Map),
-		streamStorage: streamDB,
-		avatarStorage: avatarDB,
+		streams:            new(sync.Map),
+		streamStorage:      streamDB,
+		avatarStorage:      avatarDB,
+		participantStorage: participantDB,
 	}
 	if opts.LogLevel != "" {
 		logrus.SetLevel(opts.logLevel)
@@ -163,14 +156,7 @@ func (s *Server) Run(ctx context.Context) (err error) {
 func (s *Server) Stop(ctx context.Context) error {
 	errs := make([]string, 0)
 	s.streams.Range(func(key, value interface{}) bool {
-		s := value.(streamInfo)
-		if err := s.rcpClient.Close(); err != nil {
-			errs = append(errs, fmt.Sprintf("could not close %s stream connection: %v", key, err))
-		}
-
-		if err := s.Stream.Stop(ctx); err != nil {
-			errs = append(errs, fmt.Sprintf("could not stop %s stream: %v", key, err))
-		}
+		s.killStream(ctx, key.(string))
 
 		return true
 	})
@@ -213,172 +199,6 @@ func (s *Server) Ping(ctx context.Context) error {
 	return nil
 }
 
-// JoinParticipant joins a new particiant to the stream.
-func (s *Server) JoinParticipant(
-	joinCodectx context.Context, streamUUID, joinCode string, p api.Participant) (
-	joinDesicion *api.JoinParticipantDecision, joinErr error) {
-	streamValue, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
-	}
-
-	streamData := streamValue.(streamInfo)
-	p.UUID = uuid.New().String()
-	p.Status = api.ParticipantStatusPending
-	streamData.participants.Store(p.UUID, p)
-
-	joinDesicion = new(api.JoinParticipantDecision)
-	defer func() {
-		if !joinDesicion.JoinAllowed {
-			streamData.participants.Delete(p.UUID)
-			return
-		}
-
-		accessToken, err := generateStreamAccessToken(
-			streamUUID, p.UUID, false, streamData.rsaKeys.privateKey)
-		if err != nil {
-			joinErr = fmt.Errorf("could not generate access token: %v", err)
-			return
-		}
-
-		joinDesicion.AccessToken = accessToken
-		p.Status = api.ParticipantStatusActive
-		streamData.participants.Store(p.UUID, p)
-	}()
-
-	switch streamData.join.JoinPolicy {
-	case api.JoinPolicyAuto:
-		joinDesicion.JoinAllowed = true
-	case api.JoinPolicyByCode:
-		if !strings.EqualFold(streamData.join.JoinCode, joinCode) {
-			joinErr = errors.New("invalid join code")
-			return
-		}
-		joinDesicion.JoinAllowed = true
-	case api.JoinPolicyHostResolve:
-		pendingChan := make(chan bool)
-		streamData.pendingParticipantsMap.Store(p.UUID, pendingChan)
-		joinDesicion.JoinAllowed = <-pendingChan
-	default:
-		joinErr = errors.New("unknown stream join policy")
-	}
-
-	return
-}
-
-// DecideParticipantJoin allows or denies participant to join the stream.
-func (s *Server) DecideParticipantJoin(
-	ctx context.Context, streamUUID, participantUUID string, joinAllowed bool) error {
-	streamValue, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return fmt.Errorf("could not find stream with UUID %s", streamUUID)
-	}
-	streamData := streamValue.(streamInfo)
-
-	participantValue, ok := streamData.pendingParticipantsMap.Load(participantUUID)
-	if !ok {
-		return fmt.Errorf("could not find pending participant with UUID %s", participantUUID)
-	}
-	participantChan := participantValue.(chan bool)
-	participantChan <- joinAllowed
-
-	return nil
-}
-
-// StreamParticipants returns list of stream participants.
-func (s *Server) StreamParticipants(ctx context.Context, streamUUID string) (
-	[]api.Participant, error) {
-	streamValue, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
-	}
-	streamData := streamValue.(streamInfo)
-
-	participants := make([]api.Participant, 0)
-	streamData.participants.Range(func(key, value interface{}) bool {
-		if participant, ok := value.(api.Participant); ok {
-			participants = append(participants, participant)
-		}
-
-		return true
-	})
-
-	return participants, nil
-}
-
-// NewStreamHostToken generates new access token for the host of the stream.
-func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject string) (
-	*api.StreamAuthInfo, error) {
-	streamValue, ok := s.streams.Load(streamUUID)
-	if !ok {
-		return nil, fmt.Errorf("could not find stream with UUID %s", streamUUID)
-	}
-	streamData := streamValue.(streamInfo)
-
-	if streamData.subject == "" || streamData.subject != subject {
-		return nil, errors.New("could not verify stream subject")
-	}
-
-	token, err := generateStreamAccessToken(
-		streamUUID, streamData.hostInfo.UUID, true, streamData.rsaKeys.privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("could not generate access token: %v", err)
-	}
-
-	return &api.StreamAuthInfo{
-		AccessToken: token,
-		Type:        defaultStreamTokenType,
-	}, nil
-}
-
-func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan error) {
-	err := <-intChan
-	if err != nil {
-		logrus.Errorf("stream %s has been interrupted: %v", streamUUID, err)
-	}
-
-	s.streams.Delete(streamUUID)
-}
-
-func connectToStream(address string, tryCount int) (*rpc.Client, error) {
-	for i := 0; i < tryCount; i++ {
-		client, err := jsonrpc.Dial("tcp", address)
-		if err == nil {
-			return client, nil
-		}
-
-		logrus.Warnf("could not connect to the stream: %s %v", address, err)
-
-		time.Sleep(defaultConnectToStreamRetryTimeout)
-	}
-
-	return nil, errors.New("connection timeout")
-}
-
-func buildStreamOwnerInfo(info *streamInfo, streamUUID, accessToken string) *api.StreamOwnerInfo {
-	ownerInfo := api.StreamOwnerInfo{
-		UUID:        streamUUID,
-		Name:        info.name,
-		Description: info.description,
-		JoinPolicy:  info.join.JoinPolicy,
-		JoinCode:    info.join.JoinCode,
-		Port:        info.port,
-		IP:          info.ip,
-		LaunchMode:  info.launchMode,
-		Host:        info.hostInfo,
-		StartedAt:   info.startedAt,
-	}
-
-	if accessToken != "" {
-		ownerInfo.Auth = &api.StreamAuthInfo{
-			AccessToken: accessToken,
-			Type:        defaultStreamTokenType,
-		}
-	}
-
-	return &ownerInfo
-}
-
 func newServerOptions(opt ...Option) (*Options, error) {
 	var opts Options
 
@@ -411,12 +231,6 @@ func newServerOptions(opt ...Option) (*Options, error) {
 		}
 	}
 
-	avatarsFolder := path.Join(opts.DataFolder, defaultAvatarsFolderName)
-	if err := os.MkdirAll(avatarsFolder, 0700); err != nil && err != os.ErrExist {
-		return nil, fmt.Errorf("could not access the avatars folder: %v", err)
-	}
-	opts.avatarsFolder = avatarsFolder
-
 	if !opts.ServerSecurityEnabled {
 		logrus.Warn("Server security is disabled!" +
 			"Please don't use this server in prod, or specify `--with-security-check` flag")
@@ -448,30 +262,6 @@ func defaultServerAddress() string {
 	}
 
 	return fmt.Sprintf("%s:%d", defaultServerHost, freePort)
-}
-
-func generateRSAKeys() (*rsaKeys, error) {
-	privatekey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("could not generate private RSA key: %v", err)
-	}
-
-	return &rsaKeys{
-		privateKey: privatekey,
-		publicKey:  &privatekey.PublicKey,
-	}, nil
-}
-
-func generateStreamAccessToken(
-	streamUUID, participantUUID string, isHost bool, privateKey *rsa.PrivateKey) (string, error) {
-	claims := &jwt.MapClaims{
-		"streamUUID": streamUUID,
-		"UUID":       participantUUID,
-		"host":       isHost,
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(privateKey)
 }
 
 ///////////////

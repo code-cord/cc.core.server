@@ -27,9 +27,8 @@ type Options struct {
 	ServerSecurityEnabled bool
 	BinFolder             string
 
-	logLevel      logrus.Level
-	ssKey         *rsa.PublicKey
-	avatarsFolder string
+	logLevel logrus.Level
+	ssKey    *rsa.PublicKey
 }
 
 // Name sets server name option.

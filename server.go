@@ -111,7 +111,7 @@ func main() {
 	kek(data)*/
 
 	claims := &jwt.StandardClaims{
-		ExpiresAt: time.Now().UTC().Add(time.Hour).Unix(),
+		ExpiresAt: time.Now().UTC().Add(10 * time.Hour).Unix(),
 		Subject:   "azazaz",
 	}
 

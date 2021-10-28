@@ -19,7 +19,7 @@ type Server interface {
 	Info() ServerInfo
 	Ping(ctx context.Context) error
 	NewStream(ctx context.Context, cfg StreamConfig) (*StreamOwnerInfo, error)
-	StreamInfo(ctx context.Context, streamUUID string) *StreamPublicInfo
+	StreamInfo(ctx context.Context, streamUUID string) (*StreamPublicInfo, error)
 	JoinParticipant(ctx context.Context, streamUUID, joinCode string, p Participant) (
 		*JoinParticipantDecision, error)
 	DecideParticipantJoin(
@@ -114,6 +114,7 @@ type StreamPublicInfo struct {
 	Description string
 	JoinPolicy  JoinPolicy
 	StartedAt   time.Time
+	FinishedAt  *time.Time
 }
 
 // Participant represents participant model.

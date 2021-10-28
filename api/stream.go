@@ -15,6 +15,12 @@ const (
 	StreamLaunchModeDockerContainer StreamLaunchMode = "docker_container"
 )
 
+// Stream status.
+const (
+	StreamStatusRunning  StreamStatus = "running"
+	StreamStatusFinished StreamStatus = "finished"
+)
+
 // Stream represents stream API.
 type Stream interface {
 	Start(ctx context.Context) (*StartStreamInfo, error)
@@ -33,3 +39,6 @@ type JoinPolicy string
 
 // StreamLaunchMode represents stream launch mode.
 type StreamLaunchMode string
+
+// StreamStatus represents stream status.
+type StreamStatus string

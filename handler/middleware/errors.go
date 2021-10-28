@@ -37,6 +37,7 @@ const (
 	errCodeFetchStreamParticipants = 3001
 	errCodeDecideParticipantJoin   = 3002
 	errCodeGenerateToken           = 3003
+	errCodeStreamInfo              = 3004
 )
 
 // Custom error (aka unexpected error).
@@ -104,6 +105,10 @@ var (
 	ErrGenerateAccessToken = Error{
 		Code:    errCodeGenerateToken,
 		Message: "could not generate access token",
+	}
+	ErrStreamInfo = Error{
+		Code:    errCodeStreamInfo,
+		Message: "could not get stream info",
 	}
 )
 
