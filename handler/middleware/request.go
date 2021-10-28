@@ -21,6 +21,7 @@ type ValidatorMessages interface {
 // WriteJSONResponse writes JSON encoded body to http response.
 func WriteJSONResponse(w http.ResponseWriter, statusCode int, body interface{}) {
 	w.WriteHeader(statusCode)
+	w.Header().Set("Content-Type", "application/json")
 
 	if body != nil {
 		json.NewEncoder(w).Encode(body)

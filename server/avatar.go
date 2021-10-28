@@ -1,16 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"io"
-	"io/ioutil"
 	"os"
-	"path"
-	"path/filepath"
 
 	"github.com/code-cord/cc.core.server/api"
 	"github.com/google/uuid"
@@ -18,55 +17,57 @@ import (
 )
 
 const (
-	avatarsFolder          = "avatars"
 	defaultAvatarImageSize = 256
-	pngImageExtension      = "png"
-	jpegImageExtension     = "jpg"
 	pngContentType         = "image/png"
 	jpegContentType        = "image/jpeg"
 )
 
+var imgProcessors map[string]imageProcessor = map[string]imageProcessor{
+	pngContentType:  &pngProcessor{},
+	jpegContentType: &jpegProcessor{},
+}
+
+type imageProcessor interface {
+	Decode(r io.Reader) (image.Image, error)
+	Encode(img image.Image) ([]byte, error)
+}
+
+type avatar struct {
+	UUID        string `json:"uuid"`
+	ImageData   []byte `json:"img"`
+	ContentType string `json:"ct"`
+}
+
+type pngProcessor struct{}
+
+type jpegProcessor struct{}
+
 // NewAvatar stores a new avatar image.
 func (s *Server) NewAvatar(ctx context.Context, contentType string, r io.Reader) (string, error) {
-	var (
-		img     image.Image
-		err     error
-		fileExt string
-	)
-
-	switch contentType {
-	case pngContentType:
-		img, err = png.Decode(r)
-		fileExt = pngImageExtension
-	case jpegContentType:
-		img, err = jpeg.Decode(r)
-		fileExt = jpegImageExtension
-	default:
-		err = fmt.Errorf("unsupported image type: %s", contentType)
+	imgPcocessor, ok := imgProcessors[contentType]
+	if !ok {
+		return "", fmt.Errorf("unsupported image type: %s", contentType)
 	}
+
+	img, err := imgPcocessor.Decode(r)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("could not decode image data: %v", err)
 	}
 
-	// resize image data.
 	img = resize.Resize(defaultAvatarImageSize, defaultAvatarImageSize, img, resize.Lanczos3)
 
-	avatarID := uuid.New().String()
-	avatarPath := path.Join(s.opts.avatarsFolder, fmt.Sprintf("%s.%s", avatarID, fileExt))
-	out, err := os.Create(avatarPath)
-	if err != nil {
-		return "", fmt.Errorf("could not create image: %v", err)
-	}
-	defer out.Close()
-
-	switch fileExt {
-	case pngImageExtension:
-		err = png.Encode(out, img)
-	case jpegImageExtension:
-		err = jpeg.Encode(out, img, nil)
-	}
+	imgData, err := imgPcocessor.Encode(img)
 	if err != nil {
 		return "", fmt.Errorf("could not encode image data: %v", err)
+	}
+
+	avatarID := uuid.New().String()
+	if err := s.avatarStorage.Default().Store(avatarID, avatar{
+		UUID:        avatarID,
+		ImageData:   imgData,
+		ContentType: contentType,
+	}, json.Marshal); err != nil {
+		return "", fmt.Errorf("could not store image: %v", err)
 	}
 
 	return avatarID, nil
@@ -82,26 +83,52 @@ func (s *Server) AvatarRestrictions() api.AvatarRestrictions {
 // ByID returns image data by ID.
 func (s *Server) AvatarByID(ctx context.Context, avatarID string) (
 	imgData []byte, contentType string, err error) {
-	avatarPath := path.Join(s.opts.avatarsFolder, avatarID)
-
-	matches, err := filepath.Glob(fmt.Sprintf("%s.*", avatarPath))
-	if err != nil {
-		return nil, "", err
+	rv := s.avatarStorage.Default().Load(avatarID)
+	if rv == nil {
+		err = os.ErrNotExist
+		return
 	}
 
-	if len(matches) == 0 {
-		return nil, "", os.ErrNotExist
+	var a avatar
+	if err = rv.Decode(&a, json.Unmarshal); err != nil {
+		err = fmt.Errorf("could not read avatar data: %v", err)
+		return
 	}
 
-	avatarPath = matches[0]
-	switch path.Ext(avatarPath) {
-	case pngImageExtension:
-		contentType = pngContentType
-	case jpegImageExtension:
-		contentType = jpegContentType
-	}
-
-	imgData, err = ioutil.ReadFile(avatarPath)
+	imgData = a.ImageData
+	contentType = a.ContentType
 
 	return
+}
+
+// Decode decodes png image.
+func (p *pngProcessor) Decode(r io.Reader) (image.Image, error) {
+	return png.Decode(r)
+}
+
+// Encode encodes png image.
+func (p *pngProcessor) Encode(img image.Image) ([]byte, error) {
+	var b bytes.Buffer
+
+	if err := png.Encode(&b, img); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
+}
+
+// Decode decodes jpeg image.
+func (p *jpegProcessor) Decode(r io.Reader) (image.Image, error) {
+	return jpeg.Decode(r)
+}
+
+// Encode encodes jpeg image.
+func (p *jpegProcessor) Encode(img image.Image) ([]byte, error) {
+	var b bytes.Buffer
+
+	if err := jpeg.Encode(&b, img, nil); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
 }

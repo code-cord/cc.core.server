@@ -21,7 +21,6 @@ import (
 	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler"
 	apiHandler "github.com/code-cord/cc.core.server/handler/api"
-	"github.com/code-cord/cc.core.server/handler/models"
 	"github.com/code-cord/cc.core.server/storage"
 	"github.com/code-cord/cc.core.server/util"
 	"github.com/dgrijalva/jwt-go"
@@ -38,9 +37,11 @@ const (
 	defaultConnectToStreamRetryTimeout = 2 * time.Second
 	defaultStreamTokenType             = "bearer"
 	defaultAvatarsFolderName           = "avatars"
-	defaultStreamStorageName           = "stream.db"
-	streamBucket                       = "stream"
-	defaultAvatarStorageName           = "avatar.db"
+
+	defaultStreamStorageName = "stream.db"
+	defaultAvatarStorageName = "avatar.db"
+	streamBucket             = "stream"
+	avatarBucket             = "avatar"
 )
 
 // Server represents code-cord server implementation model.
@@ -49,7 +50,8 @@ type Server struct {
 	httpServer    *http.Server
 	apiHttpServer *http.Server
 	streams       *sync.Map
-	storage       *storage.Storage
+	streamStorage *storage.Storage
+	avatarStorage *storage.Storage
 }
 
 type streamInfo struct {
@@ -81,42 +83,23 @@ func New(opt ...Option) (*Server, error) {
 		return nil, fmt.Errorf("could not init server: %v", err)
 	}
 
-	db, err := storage.New(storage.Config{
+	streamDB, err := storage.New(storage.Config{
 		DBPath:        path.Join(opts.DataFolder, defaultStreamStorageName),
 		Buckets:       []string{streamBucket},
 		DefaultBucket: streamBucket,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not connect to storage: %v", err)
+		return nil, fmt.Errorf("could not connect to stream storage: %v", err)
 	}
 
-	/////
-	mm := []models.HostOwnerInfo{
-		{
-			Username: "1",
-			IP:       "1",
-		},
-		{
-			Username: "2",
-			IP:       "2",
-		},
-		{
-			Username: "3",
-			IP:       "3",
-		},
+	avatarDB, err := storage.New(storage.Config{
+		DBPath:        path.Join(opts.DataFolder, defaultAvatarStorageName),
+		Buckets:       []string{avatarBucket},
+		DefaultBucket: avatarBucket,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not connect to avatar storage: %v", err)
 	}
-	for i := range mm {
-		err := db.Default().Insert(mm[i].Username, mm[i])
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	var mm3 []models.HostOwnerInfo
-	if err := db.Default().All(&mm3); err != nil {
-		panic(err)
-	}
-	////
 
 	s := Server{
 		opts: *opts,
@@ -126,8 +109,9 @@ func New(opt ...Option) (*Server, error) {
 		apiHttpServer: &http.Server{
 			Addr: fmt.Sprintf("%s:%d", defaultAPIServerHost, defaultAPIServerPort),
 		},
-		streams: new(sync.Map),
-		storage: db,
+		streams:       new(sync.Map),
+		streamStorage: streamDB,
+		avatarStorage: avatarDB,
 	}
 	if opts.LogLevel != "" {
 		logrus.SetLevel(opts.logLevel)
@@ -197,6 +181,14 @@ func (s *Server) Stop(ctx context.Context) error {
 
 	if err := s.apiHttpServer.Shutdown(ctx); err != nil {
 		errs = append(errs, fmt.Sprintf("could not stop API http server: %v", err))
+	}
+
+	if err := s.avatarStorage.Close(); err != nil {
+		errs = append(errs, fmt.Sprintf("could not close connection to avatar storage: %v", err))
+	}
+
+	if err := s.streamStorage.Close(); err != nil {
+		errs = append(errs, fmt.Sprintf("could not close connection to stream storage: %v", err))
 	}
 
 	if len(errs) != 0 {

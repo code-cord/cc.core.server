@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/boltdb/bolt"
@@ -35,8 +36,8 @@ func New(cfg Config) (*Storage, error) {
 		for i := range cfg.Buckets {
 			bucketName := cfg.Buckets[i]
 
-			_, err := tx.CreateBucket(wrap(bucketName))
-			if err != nil && err != bolt.ErrBucketExists {
+			_, err := tx.CreateBucketIfNotExists(wrap(bucketName))
+			if err != nil {
 				return fmt.Errorf("could not create `%s` bucket: %v", bucketName, err)
 			}
 
@@ -66,7 +67,7 @@ func (s *Storage) Close() error {
 
 // Use returns pointer to the storage bucket by name.
 //
-// If bucket doesn't exists it returns nil.
+// If bucket doesn't exist it returns nil.
 func (s *Storage) Use(bucketName string) *Bucket {
 	bucket, ok := s.buckets.Load(bucketName)
 	if !ok {
@@ -78,7 +79,7 @@ func (s *Storage) Use(bucketName string) *Bucket {
 
 // Default returns pointer to the default storage bucket.
 //
-// If bucket doesn't exists it returns nil.
+// If bucket doesn't exist it returns nil.
 func (s *Storage) Default() *Bucket {
 	bucket, ok := s.buckets.Load(s.defaultBucket)
 	if !ok {
@@ -86,4 +87,13 @@ func (s *Storage) Default() *Bucket {
 	}
 
 	return bucket.(*Bucket)
+}
+
+// Backup writes backup of the db into provided writer.
+func (s *Storage) Backup(w io.Writer) error {
+	return s.db.View(func(tx *bolt.Tx) error {
+		_, err := tx.WriteTo(w)
+
+		return err
+	})
 }
