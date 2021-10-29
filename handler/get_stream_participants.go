@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/gorilla/mux"
 )
 
@@ -23,7 +23,8 @@ func (h *Router) getStreamParticipants(w http.ResponseWriter, r *http.Request) {
 	middleware.WriteJSONResponse(w, http.StatusOK, resp)
 }
 
-func buildStreamParticipantsResponse(participants []api.Participant) []models.ParticipantResponse {
+func buildStreamParticipantsResponse(
+	participants []service.Participant) []models.ParticipantResponse {
 	resp := make([]models.ParticipantResponse, len(participants))
 
 	for i := range participants {

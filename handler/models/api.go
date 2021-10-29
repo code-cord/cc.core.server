@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/service"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
@@ -33,10 +33,10 @@ type ServerTokenResponse struct {
 // StreamListRequest represents stream list request model.
 type StreamListRequest struct {
 	Term        string
-	LaunchModes []api.StreamLaunchMode
-	Statuses    []api.StreamStatus
-	SortBy      api.StreamSortByField
-	SortOrder   api.StreamSortOrder
+	LaunchModes []service.StreamLaunchMode
+	Statuses    []service.StreamStatus
+	SortBy      service.StreamSortByField
+	SortOrder   service.StreamSortOrder
 	PageSize    int
 	Page        int
 }
@@ -58,18 +58,18 @@ type StreamInfoResponse struct {
 	Description string                   `json:"description"`
 	IP          string                   `json:"ip"`
 	Port        int                      `json:"port"`
-	LaunchMode  api.StreamLaunchMode     `json:"launchMode"`
+	LaunchMode  service.StreamLaunchMode `json:"launchMode"`
 	StartedAt   time.Time                `json:"startedAt"`
 	FinishedAt  *time.Time               `json:"finishedAt,omitempty"`
-	Status      api.StreamStatus         `json:"status"`
+	Status      service.StreamStatus     `json:"status"`
 	Join        StreamJoinConfigResponse `json:"join"`
 	Host        HostOwnerInfo            `json:"host"`
 }
 
 // StreamJoinConfigResponse represents stream join config response model.
 type StreamJoinConfigResponse struct {
-	JoinPolicy api.JoinPolicy `json:"policy"`
-	JoinCode   string         `join:"code"`
+	JoinPolicy service.JoinPolicy `json:"policy"`
+	JoinCode   string             `join:"code"`
 }
 
 // Validate validates request model.
@@ -86,8 +86,8 @@ func (req *GenerateServerTokenRequest) Validate() error {
 func (req *StreamListRequest) Validate() error {
 	modeValidationRules := []validation.Rule{
 		validation.In(
-			api.StreamLaunchModeDockerContainer,
-			api.StreamLaunchModeStandaloneApp,
+			service.StreamLaunchModeDockerContainer,
+			service.StreamLaunchModeStandaloneApp,
 		),
 	}
 	for i := range req.LaunchModes {
@@ -103,8 +103,8 @@ func (req *StreamListRequest) Validate() error {
 
 	statusValidationRules := []validation.Rule{
 		validation.In(
-			api.StreamStatusFinished,
-			api.StreamStatusRunning,
+			service.StreamStatusFinished,
+			service.StreamStatusRunning,
 		),
 	}
 	for i := range req.Statuses {
@@ -121,17 +121,17 @@ func (req *StreamListRequest) Validate() error {
 	return validation.Errors{
 		"sortBy": validation.Validate(req.SortBy,
 			validation.In(
-				api.StreamSortByFieldUUID,
-				api.StreamSortByFieldName,
-				api.StreamSortByFieldLaunchMode,
-				api.StreamSortByFieldStarted,
-				api.StreamSortByFieldStatus,
+				service.StreamSortByFieldUUID,
+				service.StreamSortByFieldName,
+				service.StreamSortByFieldLaunchMode,
+				service.StreamSortByFieldStarted,
+				service.StreamSortByFieldStatus,
 			),
 		),
 		"sortOrder": validation.Validate(req.SortOrder,
 			validation.In(
-				api.StreamSortOrderAsc,
-				api.StreamSortOrderDesc,
+				service.StreamSortOrderAsc,
+				service.StreamSortOrderDesc,
 			),
 		),
 		"pageSize": validation.Validate(req.PageSize,
@@ -146,13 +146,13 @@ func (req *StreamListRequest) Validate() error {
 // Build builds request model from URL.
 func (req *StreamListRequest) Build(values url.Values) error {
 	req.Term = values.Get("term")
-	req.SortBy = api.StreamSortByField(values.Get("sortBy"))
+	req.SortBy = service.StreamSortByField(values.Get("sortBy"))
 	if req.SortBy == "" {
-		req.SortBy = api.StreamSortByFieldUUID
+		req.SortBy = service.StreamSortByFieldUUID
 	}
-	req.SortOrder = api.StreamSortOrder(values.Get("sortOrder"))
+	req.SortOrder = service.StreamSortOrder(values.Get("sortOrder"))
 	if req.SortOrder == "" {
-		req.SortOrder = api.StreamSortOrderAsc
+		req.SortOrder = service.StreamSortOrderAsc
 	}
 
 	if pageSize := values.Get("pageSize"); pageSize != "" {
@@ -178,15 +178,15 @@ func (req *StreamListRequest) Build(values url.Values) error {
 	}
 
 	modes := values["mode"]
-	req.LaunchModes = make([]api.StreamLaunchMode, len(modes))
+	req.LaunchModes = make([]service.StreamLaunchMode, len(modes))
 	for i := range modes {
-		req.LaunchModes[i] = api.StreamLaunchMode(modes[i])
+		req.LaunchModes[i] = service.StreamLaunchMode(modes[i])
 	}
 
 	statuses := values["status"]
-	req.Statuses = make([]api.StreamStatus, len(statuses))
+	req.Statuses = make([]service.StreamStatus, len(statuses))
 	for i := range statuses {
-		req.Statuses[i] = api.StreamStatus(statuses[i])
+		req.Statuses[i] = service.StreamStatus(statuses[i])
 	}
 
 	return nil

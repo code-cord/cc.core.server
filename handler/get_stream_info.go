@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/gorilla/mux"
 )
 
@@ -27,7 +27,7 @@ func (h *Router) getStreamInfo(w http.ResponseWriter, r *http.Request) {
 	middleware.WriteJSONResponse(w, http.StatusOK, resp)
 }
 
-func buildStreamInfoResponse(info *api.StreamPublicInfo) models.StreamPublicInfoResponse {
+func buildStreamInfoResponse(info *service.StreamPublicInfo) models.StreamPublicInfoResponse {
 	return models.StreamPublicInfoResponse{
 		UUID:        info.UUID,
 		Name:        info.Name,

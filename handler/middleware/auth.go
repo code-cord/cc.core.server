@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/golang-jwt/jwt"
 	"github.com/gorilla/mux"
 )
@@ -74,7 +74,8 @@ func ServerAuthMiddleware(publicKey *rsa.PublicKey) func(http.Handler) http.Hand
 }
 
 // StreamAuthMiddleware represents middleware func to check access to the stream operations.
-func StreamAuthMiddleware(server api.Server, hostSpecific bool) func(http.Handler) http.Handler {
+func StreamAuthMiddleware(
+	server service.Server, hostSpecific bool) func(http.Handler) http.Handler {
 	return func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authToken := r.Header.Get(authTokenHeader)

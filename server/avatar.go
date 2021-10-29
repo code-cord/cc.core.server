@@ -11,7 +11,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/google/uuid"
 	"github.com/nfnt/resize"
 )
@@ -74,8 +74,8 @@ func (s *Server) NewAvatar(ctx context.Context, contentType string, r io.Reader)
 }
 
 // AvatarRestrictions returns restrictions for the avatar image.
-func (s *Server) AvatarRestrictions() api.AvatarRestrictions {
-	return api.AvatarRestrictions{
+func (s *Server) AvatarRestrictions() service.AvatarRestrictions {
+	return service.AvatarRestrictions{
 		MaxFileSize: s.opts.MaxAvatarSize,
 	}
 }

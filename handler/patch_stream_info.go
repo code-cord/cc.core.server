@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/gorilla/mux"
 )
 
@@ -18,19 +18,19 @@ func (h *Router) patchStream(w http.ResponseWriter, r *http.Request) {
 
 	streamUUID := mux.Vars(r)["uuid"]
 
-	cfg := api.PatchStreamConfig{
+	cfg := service.PatchStreamConfig{
 		Name:        req.Name,
 		Description: req.Description,
 	}
 
 	if req.Join != nil {
-		cfg.Join = &api.StreamJoinPolicyConfig{
+		cfg.Join = &service.StreamJoinPolicyConfig{
 			JoinPolicy: req.Join.Policy,
 			JoinCode:   req.Join.Code,
 		}
 	}
 	if cfg.Host != nil {
-		cfg.Host = &api.StreamHostConfig{
+		cfg.Host = &service.StreamHostConfig{
 			Username: req.Host.Name,
 			AvatarID: req.Host.AvatarID,
 		}

@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/util"
 	"github.com/gorilla/mux"
 )
@@ -28,7 +28,7 @@ func (h *Router) joinStream(w http.ResponseWriter, r *http.Request) {
 	streamUUID := mux.Vars(r)["uuid"]
 
 	joinDecision, err := h.server.JoinParticipant(
-		r.Context(), streamUUID, req.JoinCode, api.Participant{
+		r.Context(), streamUUID, req.JoinCode, service.Participant{
 			Name:     req.Name,
 			AvatarID: req.AvatarID,
 			IP:       util.GetIP(r),

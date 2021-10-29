@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/util"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -53,7 +53,7 @@ func NewDockerContainerStream(cfg DockerContainerStreamConfig) *DockerContainerS
 }
 
 // Start starts docker container stream.
-func (s *DockerContainerStream) Start(ctx context.Context) (*api.StartStreamInfo, error) {
+func (s *DockerContainerStream) Start(ctx context.Context) (*service.StartStreamInfo, error) {
 	cli, err := client.NewClientWithOpts()
 	if err != nil {
 		return nil, fmt.Errorf("could not init docker cli client: %v", err)
@@ -116,7 +116,7 @@ func (s *DockerContainerStream) Start(ctx context.Context) (*api.StartStreamInfo
 		s.interruptChan <- fmt.Errorf("status code %d: %v", waitOk.StatusCode, waitOk.Error)
 	}()
 
-	return &api.StartStreamInfo{
+	return &service.StartStreamInfo{
 		IP:   s.preferedIP,
 		Port: s.preferedPort,
 	}, nil

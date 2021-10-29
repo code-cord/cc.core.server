@@ -3,9 +3,9 @@ package api
 import (
 	"net/http"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/service"
 )
 
 func (h *Router) getStreams(w http.ResponseWriter, r *http.Request) {
@@ -15,7 +15,7 @@ func (h *Router) getStreams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	streams, err := h.server.StreamList(r.Context(), api.StreamFilter{
+	streams, err := h.server.StreamList(r.Context(), service.StreamFilter{
 		SearchPhrase: req.Term,
 		LaunchModes:  req.LaunchModes,
 		Statuses:     req.Statuses,
@@ -33,7 +33,7 @@ func (h *Router) getStreams(w http.ResponseWriter, r *http.Request) {
 	middleware.WriteJSONResponse(w, http.StatusOK, buildStreamListResponse(streams))
 }
 
-func buildStreamListResponse(streams *api.StreamList) models.StreamListResponse {
+func buildStreamListResponse(streams *service.StreamList) models.StreamListResponse {
 	resp := models.StreamListResponse{
 		Streams:  make([]models.StreamInfoResponse, len(streams.Streams)),
 		Page:     streams.Page,

@@ -4,20 +4,20 @@ import (
 	"crypto/rsa"
 	"net/http"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/gorilla/mux"
 )
 
 // Router represents server router implementation model.
 type Router struct {
 	*mux.Router
-	server api.Server
+	server service.Server
 }
 
 // Config represents router configuration model.
 type Config struct {
-	Server               api.Server
+	Server               service.Server
 	SeverSecurityEnabled bool
 	ServerPublicKey      *rsa.PublicKey
 }

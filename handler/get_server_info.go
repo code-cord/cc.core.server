@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/service"
 )
 
 func (h *Router) getServerInfo(w http.ResponseWriter, r *http.Request) {
@@ -14,7 +14,7 @@ func (h *Router) getServerInfo(w http.ResponseWriter, r *http.Request) {
 	middleware.WriteJSONResponse(w, http.StatusOK, resp)
 }
 
-func buildServerInfoResponse(s api.Server) models.ServerInfoResponse {
+func buildServerInfoResponse(s service.Server) models.ServerInfoResponse {
 	info := s.Info()
 
 	return models.ServerInfoResponse{

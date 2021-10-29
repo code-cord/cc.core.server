@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/util"
 )
 
@@ -44,7 +44,7 @@ func NewStandaloneStream(cfg StandaloneStreamConfig) *StandaloneStream {
 }
 
 // Start starts standalone stream.
-func (s *StandaloneStream) Start(ctx context.Context) (*api.StartStreamInfo, error) {
+func (s *StandaloneStream) Start(ctx context.Context) (*service.StartStreamInfo, error) {
 	if s.preferedIP == "" {
 		s.preferedIP = defaultStandaloneAppIP
 	}
@@ -74,7 +74,7 @@ func (s *StandaloneStream) Start(ctx context.Context) (*api.StartStreamInfo, err
 
 	time.Sleep(time.Second)
 
-	return &api.StartStreamInfo{
+	return &service.StartStreamInfo{
 		IP:   s.preferedIP,
 		Port: s.preferedPort,
 	}, nil

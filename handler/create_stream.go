@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/util"
 )
 
@@ -21,19 +21,19 @@ func (h *Router) createStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	streamInfo, err := h.server.NewStream(r.Context(), api.StreamConfig{
+	streamInfo, err := h.server.NewStream(r.Context(), service.StreamConfig{
 		Name:        req.Name,
 		Description: req.Description,
-		Join: api.StreamJoinPolicyConfig{
+		Join: service.StreamJoinPolicyConfig{
 			JoinPolicy: req.Join.Policy,
 			JoinCode:   req.Join.Code,
 		},
-		Launch: api.StreamLaunchConfig{
+		Launch: service.StreamLaunchConfig{
 			PreferredPort: req.Stream.PreferredPort,
 			PreferredIP:   req.Stream.PreferredIP,
 			Mode:          req.Stream.LaunchMode,
 		},
-		Host: api.StreamHostConfig{
+		Host: service.StreamHostConfig{
 			Username: req.Host.Name,
 			AvatarID: req.Host.AvatarID,
 			IP:       util.GetIP(r),
@@ -51,7 +51,7 @@ func (h *Router) createStream(w http.ResponseWriter, r *http.Request) {
 	middleware.WriteJSONResponse(w, http.StatusCreated, resp)
 }
 
-func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerInfoResponse {
+func buildStreamOwnerInfoResponse(info *service.StreamOwnerInfo) models.StreamOwnerInfoResponse {
 	resp := models.StreamOwnerInfoResponse{
 		UUID:        info.UUID,
 		Name:        info.Name,
@@ -69,7 +69,7 @@ func buildStreamOwnerInfoResponse(info *api.StreamOwnerInfo) models.StreamOwnerI
 		},
 	}
 
-	if info.JoinPolicy == api.JoinPolicyByCode {
+	if info.JoinPolicy == service.JoinPolicyByCode {
 		resp.JoinCode = info.JoinCode
 	}
 

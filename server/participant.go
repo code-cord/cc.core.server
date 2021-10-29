@@ -6,23 +6,23 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/google/uuid"
 )
 
 type participantInfo struct {
-	UUID        string                `json:"uuid"`
-	Name        string                `json:"name"`
-	AvatarID    string                `json:"avatar,omitempty"`
-	IP          string                `json:"ip"`
-	Status      api.ParticipantStatus `json:"status"`
+	UUID        string                    `json:"uuid"`
+	Name        string                    `json:"name"`
+	AvatarID    string                    `json:"avatar,omitempty"`
+	IP          string                    `json:"ip"`
+	Status      service.ParticipantStatus `json:"status"`
 	pendingChan chan bool
 }
 
 // JoinParticipant joins a new particiant to the stream.
 func (s *Server) JoinParticipant(
-	joinCodectx context.Context, streamUUID, joinCode string, p api.Participant) (
-	*api.JoinParticipantDecision, error) {
+	joinCodectx context.Context, streamUUID, joinCode string, p service.Participant) (
+	*service.JoinParticipantDecision, error) {
 	streamRV := s.streamStorage.Default().Load(streamUUID)
 	streamValue, ok := s.streams.Load(streamUUID)
 	if !ok || streamRV == nil {
@@ -40,22 +40,22 @@ func (s *Server) JoinParticipant(
 		Name:        p.Name,
 		AvatarID:    p.AvatarID,
 		IP:          p.IP,
-		Status:      api.ParticipantStatusPending,
+		Status:      service.ParticipantStatusPending,
 		pendingChan: make(chan bool),
 	}
 	streamData.pendingParticipants.Store(pInfo.UUID, pInfo)
 	defer streamData.pendingParticipants.Delete(pInfo.UUID)
 
-	joinDesicion := new(api.JoinParticipantDecision)
+	joinDesicion := new(service.JoinParticipantDecision)
 	switch stream.Join.Policy {
-	case api.JoinPolicyAuto:
+	case service.JoinPolicyAuto:
 		joinDesicion.JoinAllowed = true
-	case api.JoinPolicyByCode:
+	case service.JoinPolicyByCode:
 		if stream.Join.Code != joinCode {
 			return nil, errors.New("invalid join code")
 		}
 		joinDesicion.JoinAllowed = true
-	case api.JoinPolicyHostResolve:
+	case service.JoinPolicyHostResolve:
 		joinDesicion.JoinAllowed = <-pInfo.pendingChan
 	default:
 		return nil, errors.New("unknown stream join policy")
@@ -72,7 +72,7 @@ func (s *Server) JoinParticipant(
 	}
 
 	joinDesicion.AccessToken = accessToken
-	pInfo.Status = api.ParticipantStatusActive
+	pInfo.Status = service.ParticipantStatusActive
 
 	var participants []participantInfo
 	if pRV := s.participantStorage.Default().Load(streamUUID); pRV != nil {
@@ -110,7 +110,7 @@ func (s *Server) DecideParticipantJoin(
 
 // StreamParticipants returns list of stream participants.
 func (s *Server) StreamParticipants(ctx context.Context, streamUUID string) (
-	[]api.Participant, error) {
+	[]service.Participant, error) {
 	streamValue, ok := s.streams.Load(streamUUID)
 	if !ok {
 		return nil, fmt.Errorf("could not find running stream by UUID %s", streamUUID)
@@ -133,11 +133,11 @@ func (s *Server) StreamParticipants(ctx context.Context, streamUUID string) (
 		participants = append(participants, storageParticipants...)
 	}
 
-	streamParticipants := make([]api.Participant, len(participants))
+	streamParticipants := make([]service.Participant, len(participants))
 	for i := range participants {
 		p := &participants[i]
 
-		streamParticipants[i] = api.Participant{
+		streamParticipants[i] = service.Participant{
 			UUID:     p.UUID,
 			Name:     p.Name,
 			AvatarID: p.AvatarID,

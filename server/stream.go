@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/code-cord/cc.core.server/api"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/stream"
 	"github.com/golang-jwt/jwt"
 	"github.com/google/uuid"
@@ -29,30 +29,30 @@ const (
 )
 
 type streamModule struct {
-	api.Stream
+	service.Stream
 	rpcClient           *rpc.Client
 	pendingParticipants *sync.Map
 	rsaKeys             *rsaKeys
 }
 
 type streamInfo struct {
-	UUID        string               `json:"uuid"`
-	Name        string               `json:"name"`
-	Description string               `json:"desc,omitempty"`
-	IP          string               `json:"ip"`
-	Port        int                  `json:"port"`
-	LaunchMode  api.StreamLaunchMode `json:"mode"`
-	StartedAt   time.Time            `json:"startedAt"`
-	FinishedAt  *time.Time           `json:"finishedAt,omitempty"`
-	Subject     string               `json:"sub,omitempty"`
-	Status      api.StreamStatus     `json:"status"`
-	Join        streamJoinInfo       `json:"join"`
-	Host        streamHostInfo       `json:"host"`
+	UUID        string                   `json:"uuid"`
+	Name        string                   `json:"name"`
+	Description string                   `json:"desc,omitempty"`
+	IP          string                   `json:"ip"`
+	Port        int                      `json:"port"`
+	LaunchMode  service.StreamLaunchMode `json:"mode"`
+	StartedAt   time.Time                `json:"startedAt"`
+	FinishedAt  *time.Time               `json:"finishedAt,omitempty"`
+	Subject     string                   `json:"sub,omitempty"`
+	Status      service.StreamStatus     `json:"status"`
+	Join        streamJoinInfo           `json:"join"`
+	Host        streamHostInfo           `json:"host"`
 }
 
 type streamJoinInfo struct {
-	Code   string         `json:"code,omitempty"`
-	Policy api.JoinPolicy `json:"policy"`
+	Code   string             `json:"code,omitempty"`
+	Policy service.JoinPolicy `json:"policy"`
 }
 
 type streamHostInfo struct {
@@ -65,8 +65,8 @@ type streamHostInfo struct {
 type sortFn func(i, j int) bool
 
 // NewStream starts a new stream.
-func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
-	*api.StreamOwnerInfo, error) {
+func (s *Server) NewStream(ctx context.Context, cfg service.StreamConfig) (
+	*service.StreamOwnerInfo, error) {
 	// generate stream access keys.
 	keys, err := generateRSAKeys()
 	if err != nil {
@@ -74,7 +74,7 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 	}
 
 	if cfg.Launch.Mode == "" {
-		cfg.Launch.Mode = api.StreamLaunchModeStandaloneApp
+		cfg.Launch.Mode = service.StreamLaunchModeStandaloneApp
 	}
 
 	streamUUID := uuid.New().String()
@@ -109,7 +109,7 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 		LaunchMode:  cfg.Launch.Mode,
 		StartedAt:   time.Now().UTC(),
 		Subject:     cfg.Subject,
-		Status:      api.StreamStatusRunning,
+		Status:      service.StreamStatusRunning,
 		Join: streamJoinInfo{
 			Code:   cfg.Join.JoinCode,
 			Policy: cfg.Join.JoinPolicy,
@@ -137,7 +137,8 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 }
 
 // StreamInfo returns public stream info by stream UUID.
-func (s *Server) StreamInfo(ctx context.Context, streamUUID string) (*api.StreamPublicInfo, error) {
+func (s *Server) StreamInfo(
+	ctx context.Context, streamUUID string) (*service.StreamPublicInfo, error) {
 	streamRV := s.streamStorage.Default().Load(streamUUID)
 	if streamRV == nil {
 		return nil, os.ErrNotExist
@@ -148,7 +149,7 @@ func (s *Server) StreamInfo(ctx context.Context, streamUUID string) (*api.Stream
 		return nil, fmt.Errorf("could not decode stream data: %v", err)
 	}
 
-	return &api.StreamPublicInfo{
+	return &service.StreamPublicInfo{
 		UUID:        streamUUID,
 		Name:        info.Name,
 		Description: info.Description,
@@ -182,8 +183,9 @@ func (s *Server) StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicK
 }
 
 // PatchStream updates stream info.
-func (s *Server) PatchStream(ctx context.Context, streamUUID string, cfg api.PatchStreamConfig) (
-	*api.StreamOwnerInfo, error) {
+func (s *Server) PatchStream(
+	ctx context.Context, streamUUID string, cfg service.PatchStreamConfig) (
+	*service.StreamOwnerInfo, error) {
 	streamRV := s.streamStorage.Default().Load(streamUUID)
 	_, ok := s.streams.Load(streamUUID)
 	if !ok || streamRV == nil {
@@ -224,7 +226,7 @@ func (s *Server) PatchStream(ctx context.Context, streamUUID string, cfg api.Pat
 
 // NewStreamHostToken generates new access token for the host of the stream.
 func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject string) (
-	*api.AuthInfo, error) {
+	*service.AuthInfo, error) {
 	streamRV := s.streamStorage.Default().Load(streamUUID)
 	streamValue, ok := s.streams.Load(streamUUID)
 	if !ok || streamRV == nil {
@@ -247,21 +249,21 @@ func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject str
 		return nil, fmt.Errorf("could not generate access token: %v", err)
 	}
 
-	return &api.AuthInfo{
+	return &service.AuthInfo{
 		AccessToken: token,
 		Type:        defaultStreamTokenType,
 	}, nil
 }
 
 // StreamList returns stream list.
-func (s *Server) StreamList(ctx context.Context, filter api.StreamFilter) (
-	*api.StreamList, error) {
+func (s *Server) StreamList(ctx context.Context, filter service.StreamFilter) (
+	*service.StreamList, error) {
 	cursor, err := s.streamStorage.Default().All()
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch streams from storage: %v", err)
 	}
 
-	streams := make([]api.StreamInfo, 0, s.streamStorage.Default().Size())
+	streams := make([]service.StreamInfo, 0, s.streamStorage.Default().Size())
 	for rv, hasNext := cursor.First(); hasNext; rv, hasNext = cursor.Next() {
 		var stream streamInfo
 		if err := rv.Decode(&stream, json.Unmarshal); err != nil {
@@ -269,7 +271,7 @@ func (s *Server) StreamList(ctx context.Context, filter api.StreamFilter) (
 		}
 
 		if isStreamFitsFilter(&stream, &filter) {
-			streams = append(streams, api.StreamInfo{
+			streams = append(streams, service.StreamInfo{
 				UUID:        stream.UUID,
 				Name:        stream.Name,
 				Description: stream.Description,
@@ -279,11 +281,11 @@ func (s *Server) StreamList(ctx context.Context, filter api.StreamFilter) (
 				StartedAt:   stream.StartedAt,
 				FinishedAt:  stream.FinishedAt,
 				Status:      stream.Status,
-				Join: api.StreamJoinPolicyConfig{
+				Join: service.StreamJoinPolicyConfig{
 					JoinPolicy: stream.Join.Policy,
 					JoinCode:   stream.Join.Code,
 				},
-				Host: api.HostInfo{
+				Host: service.HostInfo{
 					UUID:     stream.Host.UUID,
 					Username: stream.Host.Username,
 					AvatarID: stream.Host.AvatarID,
@@ -295,7 +297,7 @@ func (s *Server) StreamList(ctx context.Context, filter api.StreamFilter) (
 
 	filterStreams(streams, filter.SortBy, filter.SortOrder)
 
-	var filteredStreams []api.StreamInfo
+	var filteredStreams []service.StreamInfo
 	startIndex := (filter.Page - 1) * filter.PageSize
 	endIndex := startIndex + filter.PageSize
 
@@ -308,7 +310,7 @@ func (s *Server) StreamList(ctx context.Context, filter api.StreamFilter) (
 	}
 
 	total := len(streams)
-	return &api.StreamList{
+	return &service.StreamList{
 		Streams:  filteredStreams,
 		Count:    len(filteredStreams),
 		Total:    total,
@@ -318,15 +320,15 @@ func (s *Server) StreamList(ctx context.Context, filter api.StreamFilter) (
 	}, nil
 }
 
-func (s *Server) newStreamHandler(cfg api.StreamConfig, streamUUID string) (api.Stream, error) {
+func (s *Server) newStreamHandler(cfg service.StreamConfig, streamUUID string) (service.Stream, error) {
 	switch cfg.Launch.Mode {
-	case api.StreamLaunchModeStandaloneApp:
+	case service.StreamLaunchModeStandaloneApp:
 		return stream.NewStandaloneStream(stream.StandaloneStreamConfig{
 			PreferedIP:   cfg.Launch.PreferredIP,
 			PreferedPort: cfg.Launch.PreferredPort,
 			BinPath:      s.opts.BinFolder,
 		}), nil
-	case api.StreamLaunchModeDockerContainer:
+	case service.StreamLaunchModeDockerContainer:
 		return stream.NewDockerContainerStream(stream.DockerContainerStreamConfig{
 			StreamUUID:      streamUUID,
 			ContainerPrefix: s.opts.StreamContainerPrefix,
@@ -375,13 +377,13 @@ func (s *Server) killStream(ctx context.Context, streamUUID string) {
 
 	now := time.Now().UTC()
 	stream.FinishedAt = &now
-	stream.Status = api.StreamStatusFinished
+	stream.Status = service.StreamStatusFinished
 	if err := s.streamStorage.Default().Store(streamUUID, stream, json.Marshal); err != nil {
 		logrus.Errorf("could not store %s stream data to finish: %v", streamUUID, err)
 	}
 }
 
-func isStreamFitsFilter(stream *streamInfo, filter *api.StreamFilter) bool {
+func isStreamFitsFilter(stream *streamInfo, filter *service.StreamFilter) bool {
 	// filter by search term.
 	if !strings.Contains(stream.Name, filter.SearchPhrase) &&
 		!strings.Contains(stream.Description, filter.SearchPhrase) {
@@ -413,18 +415,20 @@ func isStreamFitsFilter(stream *streamInfo, filter *api.StreamFilter) bool {
 }
 
 func filterStreams(
-	streams []api.StreamInfo, sortBy api.StreamSortByField, sortOrder api.StreamSortOrder) {
+	streams []service.StreamInfo,
+	sortBy service.StreamSortByField,
+	sortOrder service.StreamSortOrder) {
 	var sortFunc sortFn
 	switch sortBy {
-	case api.StreamSortByFieldUUID:
+	case service.StreamSortByFieldUUID:
 		sortFunc = filterStreamsByUUID(streams, sortOrder)
-	case api.StreamSortByFieldName:
+	case service.StreamSortByFieldName:
 		sortFunc = filterStreamsByName(streams, sortOrder)
-	case api.StreamSortByFieldLaunchMode:
+	case service.StreamSortByFieldLaunchMode:
 		sortFunc = filterStreamsByLaunchMode(streams, sortOrder)
-	case api.StreamSortByFieldStarted:
+	case service.StreamSortByFieldStarted:
 		sortFunc = filterStreamsByStartedDate(streams, sortOrder)
-	case api.StreamSortByFieldStatus:
+	case service.StreamSortByFieldStatus:
 		sortFunc = filterStreamsByStatus(streams, sortOrder)
 	}
 
@@ -433,9 +437,9 @@ func filterStreams(
 	}
 }
 
-func filterStreamsByUUID(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+func filterStreamsByUUID(streams []service.StreamInfo, sortOrder service.StreamSortOrder) sortFn {
 	return func(i, j int) bool {
-		if sortOrder == api.StreamSortOrderAsc {
+		if sortOrder == service.StreamSortOrderAsc {
 			return streams[i].UUID < streams[j].UUID
 		}
 
@@ -443,9 +447,9 @@ func filterStreamsByUUID(streams []api.StreamInfo, sortOrder api.StreamSortOrder
 	}
 }
 
-func filterStreamsByName(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+func filterStreamsByName(streams []service.StreamInfo, sortOrder service.StreamSortOrder) sortFn {
 	return func(i, j int) bool {
-		if sortOrder == api.StreamSortOrderAsc {
+		if sortOrder == service.StreamSortOrderAsc {
 			return streams[i].Name < streams[j].Name
 		}
 
@@ -453,9 +457,10 @@ func filterStreamsByName(streams []api.StreamInfo, sortOrder api.StreamSortOrder
 	}
 }
 
-func filterStreamsByLaunchMode(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+func filterStreamsByLaunchMode(
+	streams []service.StreamInfo, sortOrder service.StreamSortOrder) sortFn {
 	return func(i, j int) bool {
-		if sortOrder == api.StreamSortOrderAsc {
+		if sortOrder == service.StreamSortOrderAsc {
 			return string(streams[i].LaunchMode) < string(streams[j].LaunchMode)
 		}
 
@@ -463,9 +468,10 @@ func filterStreamsByLaunchMode(streams []api.StreamInfo, sortOrder api.StreamSor
 	}
 }
 
-func filterStreamsByStartedDate(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+func filterStreamsByStartedDate(
+	streams []service.StreamInfo, sortOrder service.StreamSortOrder) sortFn {
 	return func(i, j int) bool {
-		if sortOrder == api.StreamSortOrderAsc {
+		if sortOrder == service.StreamSortOrderAsc {
 			return streams[i].StartedAt.Before(streams[j].StartedAt)
 		}
 
@@ -473,9 +479,10 @@ func filterStreamsByStartedDate(streams []api.StreamInfo, sortOrder api.StreamSo
 	}
 }
 
-func filterStreamsByStatus(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+func filterStreamsByStatus(
+	streams []service.StreamInfo, sortOrder service.StreamSortOrder) sortFn {
 	return func(i, j int) bool {
-		if sortOrder == api.StreamSortOrderAsc {
+		if sortOrder == service.StreamSortOrderAsc {
 			return string(streams[i].Status) < string(streams[j].Status)
 		}
 
@@ -507,8 +514,8 @@ func generateRSAKeys() (*rsaKeys, error) {
 	}, nil
 }
 
-func startStreamAndConnect(ctx context.Context, stream api.Stream) (
-	*rpc.Client, *api.StartStreamInfo, error) {
+func startStreamAndConnect(ctx context.Context, stream service.Stream) (
+	*rpc.Client, *service.StartStreamInfo, error) {
 	streamLaunchInfo, err := stream.Start(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not run stream instance: %v", err)
@@ -550,8 +557,8 @@ func connectToStream(address string, tryCount int) (*rpc.Client, error) {
 	return nil, errors.New("connection timeout")
 }
 
-func buildStreamOwnerInfo(info *streamInfo, accessToken string) *api.StreamOwnerInfo {
-	ownerInfo := api.StreamOwnerInfo{
+func buildStreamOwnerInfo(info *streamInfo, accessToken string) *service.StreamOwnerInfo {
+	ownerInfo := service.StreamOwnerInfo{
 		UUID:        info.UUID,
 		Name:        info.Name,
 		Description: info.Description,
@@ -560,7 +567,7 @@ func buildStreamOwnerInfo(info *streamInfo, accessToken string) *api.StreamOwner
 		Port:        info.Port,
 		IP:          info.IP,
 		LaunchMode:  info.LaunchMode,
-		Host: api.HostInfo{
+		Host: service.HostInfo{
 			UUID:     info.Host.UUID,
 			Username: info.Host.Username,
 			AvatarID: info.Host.AvatarID,
@@ -570,7 +577,7 @@ func buildStreamOwnerInfo(info *streamInfo, accessToken string) *api.StreamOwner
 	}
 
 	if accessToken != "" {
-		ownerInfo.Auth = &api.AuthInfo{
+		ownerInfo.Auth = &service.AuthInfo{
 			AccessToken: accessToken,
 			Type:        defaultStreamTokenType,
 		}

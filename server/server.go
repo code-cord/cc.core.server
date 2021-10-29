@@ -13,9 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/code-cord/cc.core.server/api"
 	"github.com/code-cord/cc.core.server/handler"
-	apiHandler "github.com/code-cord/cc.core.server/handler/api"
+	"github.com/code-cord/cc.core.server/handler/api"
+	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/storage"
 	"github.com/code-cord/cc.core.server/util"
 	"github.com/docker/docker/api/types"
@@ -108,7 +108,7 @@ func New(opt ...Option) (*Server, error) {
 		SeverSecurityEnabled: s.opts.ServerSecurityEnabled,
 		ServerPublicKey:      s.opts.publicKey,
 	})
-	s.apiHttpServer.Handler = apiHandler.New(apiHandler.Config{
+	s.apiHttpServer.Handler = api.New(api.Config{
 		Server: &s,
 	})
 
@@ -186,8 +186,8 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 // Info returns server public info.
-func (s *Server) Info() api.ServerInfo {
-	return api.ServerInfo{
+func (s *Server) Info() service.ServerInfo {
+	return service.ServerInfo{
 		Name:        s.opts.Name,
 		Description: s.opts.Description,
 		Version:     s.opts.Version,
@@ -202,7 +202,7 @@ func (s *Server) Ping(ctx context.Context) error {
 
 // NewServerToken generates new server auth token.
 func (s *Server) NewServerToken(ctx context.Context, claims *jwt.StandardClaims) (
-	*api.AuthInfo, error) {
+	*service.AuthInfo, error) {
 	if s.opts.privateKey == nil {
 		return nil, errors.New("server doesn't have RSA private key")
 	}
@@ -213,21 +213,21 @@ func (s *Server) NewServerToken(ctx context.Context, claims *jwt.StandardClaims)
 		return nil, err
 	}
 
-	return &api.AuthInfo{
+	return &service.AuthInfo{
 		AccessToken: tokenStr,
 	}, nil
 }
 
 // StorageBackup creates backup of the provided storage.
 func (s *Server) StorageBackup(
-	ctx context.Context, storageName api.ServerStorage, w io.Writer) error {
+	ctx context.Context, storageName service.ServerStorage, w io.Writer) error {
 	var storage *storage.Storage
 	switch storageName {
-	case api.ServerStorageAvatar:
+	case service.ServerStorageAvatar:
 		storage = s.avatarStorage
-	case api.ServerStorageParticipant:
+	case service.ServerStorageParticipant:
 		storage = s.participantStorage
-	case api.ServerStorageStream:
+	case service.ServerStorageStream:
 		storage = s.streamStorage
 	default:
 		return fmt.Errorf("invalid storage name: %s", storageName)
