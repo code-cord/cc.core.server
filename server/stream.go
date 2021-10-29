@@ -345,7 +345,6 @@ func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan er
 		logrus.Errorf("stream %s has been interrupted: %v", streamUUID, err)
 	}
 
-	s.streams.Delete(streamUUID)
 	s.killStream(context.Background(), streamUUID)
 }
 

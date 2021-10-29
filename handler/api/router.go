@@ -29,6 +29,9 @@ func New(cfg Config) Router {
 		Methods(http.MethodGet).
 		HandlerFunc(r.getServerInfo)
 
+	r.Path("/ping").
+		HandlerFunc(r.ping)
+
 	r.Path("/token").
 		Methods(http.MethodPost).
 		HandlerFunc(r.generateToken)
@@ -36,6 +39,14 @@ func New(cfg Config) Router {
 	r.Path("/stream").
 		Methods(http.MethodGet).
 		HandlerFunc(r.getStreams)
+
+	r.Path("/stream/{uuid}").
+		Methods(http.MethodDelete).
+		HandlerFunc(r.finishStream)
+
+	r.Path("/storage/{name}").
+		Methods(http.MethodGet).
+		HandlerFunc(r.storageBackup)
 
 	return r
 }

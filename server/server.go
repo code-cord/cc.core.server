@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -163,11 +164,18 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	if err := s.avatarStorage.Close(); err != nil {
-		errs = append(errs, fmt.Sprintf("could not close connection to avatar storage: %v", err))
+		errs = append(errs, fmt.Sprintf(
+			"could not close connection to avatar storage: %v", err))
 	}
 
 	if err := s.streamStorage.Close(); err != nil {
-		errs = append(errs, fmt.Sprintf("could not close connection to stream storage: %v", err))
+		errs = append(errs, fmt.Sprintf(
+			"could not close connection to stream storage: %v", err))
+	}
+
+	if err := s.participantStorage.Close(); err != nil {
+		errs = append(errs, fmt.Sprintf(
+			"could not close connection to participant storage: %v", err))
 	}
 
 	if len(errs) != 0 {
@@ -208,6 +216,24 @@ func (s *Server) NewServerToken(ctx context.Context, claims *jwt.StandardClaims)
 	return &api.AuthInfo{
 		AccessToken: tokenStr,
 	}, nil
+}
+
+// StorageBackup creates backup of the provided storage.
+func (s *Server) StorageBackup(
+	ctx context.Context, storageName api.ServerStorage, w io.Writer) error {
+	var storage *storage.Storage
+	switch storageName {
+	case api.ServerStorageAvatar:
+		storage = s.avatarStorage
+	case api.ServerStorageParticipant:
+		storage = s.participantStorage
+	case api.ServerStorageStream:
+		storage = s.streamStorage
+	default:
+		return fmt.Errorf("invalid storage name: %s", storageName)
+	}
+
+	return storage.Backup(w)
 }
 
 func newServerOptions(opt ...Option) (*Options, error) {

@@ -19,6 +19,7 @@ const (
 	errCodeUpdateStream  = 2003
 	errCodeGenerateToken = 2004
 	errCodeStreamList    = 2005
+	errCodeBackupStorage = 2006
 
 	// stream errors 3xxx.
 	errCodeJoinStream              = 3000
@@ -81,6 +82,10 @@ var (
 	ErrStreamList = Error{
 		Code:    errCodeStreamList,
 		Message: "could not fetch stream list",
+	}
+	ErrBackupStorage = Error{
+		Code:    errCodeBackupStorage,
+		Message: "could not create storage backup",
 	}
 )
 

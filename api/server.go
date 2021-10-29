@@ -31,6 +31,13 @@ const (
 	StreamSortOrderAsc  StreamSortOrder = "asc"
 )
 
+// Server storage.
+const (
+	ServerStorageAvatar      ServerStorage = "avatar"
+	ServerStorageParticipant ServerStorage = "participant"
+	ServerStorageStream      ServerStorage = "stream"
+)
+
 // Server describes server API.
 type Server interface {
 	Info() ServerInfo
@@ -52,6 +59,7 @@ type Server interface {
 	AvatarRestrictions() AvatarRestrictions
 	AvatarByID(ctx context.Context, avatarID string) ([]byte, string, error)
 	StreamList(ctx context.Context, filter StreamFilter) (*StreamList, error)
+	StorageBackup(ctx context.Context, storageName ServerStorage, w io.Writer) error
 }
 
 // AvatarRestrictions represents avatar restrictions model.
@@ -203,3 +211,6 @@ type StreamInfo struct {
 	Join        StreamJoinPolicyConfig
 	Host        HostInfo
 }
+
+// ServerStorage represents server storage type.
+type ServerStorage string
