@@ -11,7 +11,7 @@ const (
 
 // Stream launch mode.
 const (
-	StreamLaunchModeSingletonApp    StreamLaunchMode = "singleton_app"
+	StreamLaunchModeStandaloneApp   StreamLaunchMode = "standalone_app"
 	StreamLaunchModeDockerContainer StreamLaunchMode = "docker_container"
 )
 

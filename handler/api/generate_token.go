@@ -5,6 +5,7 @@ import (
 
 	"github.com/code-cord/cc.core.server/handler/middleware"
 	"github.com/code-cord/cc.core.server/handler/models"
+	"github.com/golang-jwt/jwt"
 )
 
 func (h *Router) generateToken(w http.ResponseWriter, r *http.Request) {
@@ -14,32 +15,21 @@ func (h *Router) generateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	/*middleware.UpgradeRequestToSSE(w, "*")
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		middleware.WriteJSONResponse(w, http.StatusBadRequest, middleware.ErrSSEUpgrade.New(nil))
-		return
-	}
-	defer flusher.Flush()
-
-	streamUUID := mux.Vars(r)["uuid"]
-
-	joinDecision, err := h.server.JoinParticipant(
-		r.Context(), streamUUID, req.JoinCode, api.Participant{
-			Name:     req.Name,
-			AvatarID: req.AvatarID,
-			IP:       util.GetIP(r),
-		})
+	token, err := h.server.NewServerToken(r.Context(), &jwt.StandardClaims{
+		Audience:  req.Audience,
+		ExpiresAt: req.ExpiresAt.Unix(),
+		IssuedAt:  req.IssuedAt.Unix(),
+		Issuer:    req.Issuer,
+		NotBefore: req.NotBefore.Unix(),
+		Subject:   req.Subject,
+	})
 	if err != nil {
 		middleware.WriteJSONResponse(w, http.StatusInternalServerError,
-			middleware.ErrJoinStream.New(err.Error()))
+			middleware.ErrGenerateToken.New(err.Error()))
 		return
 	}
 
-	resp := models.ParticipantJoinResponse{
-		Allowed:     joinDecision.JoinAllowed,
-		AccessToken: joinDecision.AccessToken,
-	}
-
-	middleware.WriteJSONResponse(w, http.StatusOK, resp)*/
+	middleware.WriteJSONResponse(w, http.StatusCreated, models.ServerTokenResponse{
+		AccessToken: token.AccessToken,
+	})
 }

@@ -6,20 +6,6 @@ const (
 	// custom errors.
 	errCodeCustom = 0
 
-	// request errors.
-	/*errCodeInvalidRequest      = 1000
-	errCodeInvalidRequestParam = 1001
-	errCodeSSEUpgrade          = 1002
-	errCodeSSESend             = 1003
-	errCodeAuth                = 1004
-
-	// stream errors.
-	errStreamStart           = 2000
-	errStreamStop            = 2001
-	errJoinParticipant       = 2002
-	errAcceptParticipantJoin = 2003
-	errRejectParticipantJoin = 2004*/
-
 	// request errors 1xxx.
 	errCodeInvalidRequest      = 1000
 	errCodeInvalidRequestParam = 1001
@@ -27,16 +13,18 @@ const (
 	errCodeAuth                = 1003
 
 	// server errors 2xxx.
-	errCodeServerPing   = 2000
-	errCodeCreateStream = 2001
-	errCodeFinishStream = 2002
-	errCodeUpdateStream = 2003
+	errCodeServerPing    = 2000
+	errCodeCreateStream  = 2001
+	errCodeFinishStream  = 2002
+	errCodeUpdateStream  = 2003
+	errCodeGenerateToken = 2004
+	errCodeStreamList    = 2005
 
 	// stream errors 3xxx.
 	errCodeJoinStream              = 3000
 	errCodeFetchStreamParticipants = 3001
 	errCodeDecideParticipantJoin   = 3002
-	errCodeGenerateToken           = 3003
+	errCodeGenerateStreamToken     = 3003
 	errCodeStreamInfo              = 3004
 )
 
@@ -86,6 +74,14 @@ var (
 		Code:    errCodeUpdateStream,
 		Message: "could not update stream info",
 	}
+	ErrGenerateToken = Error{
+		Code:    errCodeGenerateToken,
+		Message: "could not generate new access token",
+	}
+	ErrStreamList = Error{
+		Code:    errCodeStreamList,
+		Message: "could not fetch stream list",
+	}
 )
 
 // Stream error.
@@ -103,7 +99,7 @@ var (
 		Message: "could not change participant join status",
 	}
 	ErrGenerateAccessToken = Error{
-		Code:    errCodeGenerateToken,
+		Code:    errCodeGenerateStreamToken,
 		Message: "could not generate access token",
 	}
 	ErrStreamInfo = Error{

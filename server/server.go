@@ -108,8 +108,7 @@ func New(opt ...Option) (*Server, error) {
 		ServerPublicKey:      s.opts.publicKey,
 	})
 	s.apiHttpServer.Handler = apiHandler.New(apiHandler.Config{
-		Server:           &s,
-		ServerPrivateKey: s.opts.privateKey,
+		Server: &s,
 	})
 
 	return &s, nil
@@ -191,6 +190,24 @@ func (s *Server) Info() api.ServerInfo {
 // Ping pings server.
 func (s *Server) Ping(ctx context.Context) error {
 	return nil
+}
+
+// NewServerToken generates new server auth token.
+func (s *Server) NewServerToken(ctx context.Context, claims *jwt.StandardClaims) (
+	*api.AuthInfo, error) {
+	if s.opts.privateKey == nil {
+		return nil, errors.New("server doesn't have RSA private key")
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, *claims)
+	tokenStr, err := token.SignedString(s.opts.privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &api.AuthInfo{
+		AccessToken: tokenStr,
+	}, nil
 }
 
 func newServerOptions(opt ...Option) (*Options, error) {

@@ -10,6 +10,8 @@ import (
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,6 +62,8 @@ type streamHostInfo struct {
 	IP       string `json:"ip"`
 }
 
+type sortFn func(i, j int) bool
+
 // NewStream starts a new stream.
 func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 	*api.StreamOwnerInfo, error) {
@@ -70,7 +74,7 @@ func (s *Server) NewStream(ctx context.Context, cfg api.StreamConfig) (
 	}
 
 	if cfg.Launch.Mode == "" {
-		cfg.Launch.Mode = api.StreamLaunchModeSingletonApp
+		cfg.Launch.Mode = api.StreamLaunchModeStandaloneApp
 	}
 
 	streamUUID := uuid.New().String()
@@ -220,7 +224,7 @@ func (s *Server) PatchStream(ctx context.Context, streamUUID string, cfg api.Pat
 
 // NewStreamHostToken generates new access token for the host of the stream.
 func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject string) (
-	*api.StreamAuthInfo, error) {
+	*api.AuthInfo, error) {
 	streamRV := s.streamStorage.Default().Load(streamUUID)
 	streamValue, ok := s.streams.Load(streamUUID)
 	if !ok || streamRV == nil {
@@ -243,15 +247,80 @@ func (s *Server) NewStreamHostToken(ctx context.Context, streamUUID, subject str
 		return nil, fmt.Errorf("could not generate access token: %v", err)
 	}
 
-	return &api.StreamAuthInfo{
+	return &api.AuthInfo{
 		AccessToken: token,
 		Type:        defaultStreamTokenType,
 	}, nil
 }
 
+// StreamList returns stream list.
+func (s *Server) StreamList(ctx context.Context, filter api.StreamFilter) (
+	*api.StreamList, error) {
+	cursor, err := s.streamStorage.Default().All()
+	if err != nil {
+		return nil, fmt.Errorf("could not fetch streams from storage: %v", err)
+	}
+
+	streams := make([]api.StreamInfo, 0, s.streamStorage.Default().Size())
+	for rv, hasNext := cursor.First(); hasNext; rv, hasNext = cursor.Next() {
+		var stream streamInfo
+		if err := rv.Decode(&stream, json.Unmarshal); err != nil {
+			return nil, fmt.Errorf("could not parse stream info: %v", err)
+		}
+
+		if isStreamFitsFilter(&stream, &filter) {
+			streams = append(streams, api.StreamInfo{
+				UUID:        stream.UUID,
+				Name:        stream.Name,
+				Description: stream.Description,
+				IP:          stream.IP,
+				Port:        stream.Port,
+				LaunchMode:  stream.LaunchMode,
+				StartedAt:   stream.StartedAt,
+				FinishedAt:  stream.FinishedAt,
+				Status:      stream.Status,
+				Join: api.StreamJoinPolicyConfig{
+					JoinPolicy: stream.Join.Policy,
+					JoinCode:   stream.Join.Code,
+				},
+				Host: api.HostInfo{
+					UUID:     stream.Host.UUID,
+					Username: stream.Host.Username,
+					AvatarID: stream.Host.AvatarID,
+					IP:       stream.Host.IP,
+				},
+			})
+		}
+	}
+
+	filterStreams(streams, filter.SortBy, filter.SortOrder)
+
+	var filteredStreams []api.StreamInfo
+	startIndex := (filter.Page - 1) * filter.PageSize
+	endIndex := startIndex + filter.PageSize
+
+	if startIndex < len(streams) {
+		filteredStreams = streams[startIndex:]
+	}
+
+	if endIndex < len(streams) {
+		filteredStreams = filteredStreams[:endIndex-startIndex]
+	}
+
+	total := len(streams)
+	return &api.StreamList{
+		Streams:  filteredStreams,
+		Count:    len(filteredStreams),
+		Total:    total,
+		PageSize: filter.PageSize,
+		Page:     filter.Page,
+		HasNext:  total > filter.Page*filter.PageSize,
+	}, nil
+}
+
 func (s *Server) newStreamHandler(cfg api.StreamConfig, streamUUID string) (api.Stream, error) {
 	switch cfg.Launch.Mode {
-	case api.StreamLaunchModeSingletonApp:
+	case api.StreamLaunchModeStandaloneApp:
 		return stream.NewStandaloneStream(stream.StandaloneStreamConfig{
 			PreferedIP:   cfg.Launch.PreferredIP,
 			PreferedPort: cfg.Launch.PreferredPort,
@@ -310,6 +379,108 @@ func (s *Server) killStream(ctx context.Context, streamUUID string) {
 	stream.Status = api.StreamStatusFinished
 	if err := s.streamStorage.Default().Store(streamUUID, stream, json.Marshal); err != nil {
 		logrus.Errorf("could not store %s stream data to finish: %v", streamUUID, err)
+	}
+}
+
+func isStreamFitsFilter(stream *streamInfo, filter *api.StreamFilter) bool {
+	// filter by search term.
+	if !strings.Contains(stream.Name, filter.SearchPhrase) &&
+		!strings.Contains(stream.Description, filter.SearchPhrase) {
+		return false
+	}
+
+	// filter by launch mode.
+	found := len(filter.LaunchModes) == 0
+	for i := range filter.LaunchModes {
+		if filter.LaunchModes[i] == stream.LaunchMode {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+
+	// filter by status.
+	found = len(filter.Statuses) == 0
+	for i := range filter.Statuses {
+		if filter.Statuses[i] == stream.Status {
+			found = true
+			break
+		}
+	}
+
+	return found
+}
+
+func filterStreams(
+	streams []api.StreamInfo, sortBy api.StreamSortByField, sortOrder api.StreamSortOrder) {
+	var sortFunc sortFn
+	switch sortBy {
+	case api.StreamSortByFieldUUID:
+		sortFunc = filterStreamsByUUID(streams, sortOrder)
+	case api.StreamSortByFieldName:
+		sortFunc = filterStreamsByName(streams, sortOrder)
+	case api.StreamSortByFieldLaunchMode:
+		sortFunc = filterStreamsByLaunchMode(streams, sortOrder)
+	case api.StreamSortByFieldStarted:
+		sortFunc = filterStreamsByStartedDate(streams, sortOrder)
+	case api.StreamSortByFieldStatus:
+		sortFunc = filterStreamsByStatus(streams, sortOrder)
+	}
+
+	if sortFunc != nil {
+		sort.Slice(streams, sortFunc)
+	}
+}
+
+func filterStreamsByUUID(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+	return func(i, j int) bool {
+		if sortOrder == api.StreamSortOrderAsc {
+			return streams[i].UUID < streams[j].UUID
+		}
+
+		return streams[i].UUID > streams[j].UUID
+	}
+}
+
+func filterStreamsByName(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+	return func(i, j int) bool {
+		if sortOrder == api.StreamSortOrderAsc {
+			return streams[i].Name < streams[j].Name
+		}
+
+		return streams[i].Name > streams[j].Name
+	}
+}
+
+func filterStreamsByLaunchMode(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+	return func(i, j int) bool {
+		if sortOrder == api.StreamSortOrderAsc {
+			return string(streams[i].LaunchMode) < string(streams[j].LaunchMode)
+		}
+
+		return string(streams[i].LaunchMode) > string(streams[j].LaunchMode)
+	}
+}
+
+func filterStreamsByStartedDate(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+	return func(i, j int) bool {
+		if sortOrder == api.StreamSortOrderAsc {
+			return streams[i].StartedAt.Before(streams[j].StartedAt)
+		}
+
+		return streams[i].StartedAt.After(streams[j].StartedAt)
+	}
+}
+
+func filterStreamsByStatus(streams []api.StreamInfo, sortOrder api.StreamSortOrder) sortFn {
+	return func(i, j int) bool {
+		if sortOrder == api.StreamSortOrderAsc {
+			return string(streams[i].Status) < string(streams[j].Status)
+		}
+
+		return string(streams[i].Status) > string(streams[j].Status)
 	}
 }
 
@@ -400,7 +571,7 @@ func buildStreamOwnerInfo(info *streamInfo, accessToken string) *api.StreamOwner
 	}
 
 	if accessToken != "" {
-		ownerInfo.Auth = &api.StreamAuthInfo{
+		ownerInfo.Auth = &api.AuthInfo{
 			AccessToken: accessToken,
 			Type:        defaultStreamTokenType,
 		}

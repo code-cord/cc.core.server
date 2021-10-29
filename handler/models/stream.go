@@ -140,7 +140,7 @@ func (req *CreateStreamRequest) Validate() error {
 		errs["stream.launch"] = validation.Validate(req.Stream.LaunchMode,
 			validation.In(
 				api.StreamLaunchModeDockerContainer,
-				api.StreamLaunchModeSingletonApp,
+				api.StreamLaunchModeStandaloneApp,
 			),
 		)
 	}

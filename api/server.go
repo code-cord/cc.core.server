@@ -5,6 +5,8 @@ import (
 	"crypto/rsa"
 	"io"
 	"time"
+
+	"github.com/golang-jwt/jwt"
 )
 
 // Participant status.
@@ -12,6 +14,21 @@ const (
 	ParticipantStatusActive  ParticipantStatus = "active"
 	ParticipantStatusBlocked ParticipantStatus = "blocked"
 	ParticipantStatusPending ParticipantStatus = "pending"
+)
+
+// Stream sort field.
+const (
+	StreamSortByFieldUUID       StreamSortByField = "uuid"
+	StreamSortByFieldName       StreamSortByField = "name"
+	StreamSortByFieldLaunchMode StreamSortByField = "mode"
+	StreamSortByFieldStarted    StreamSortByField = "started"
+	StreamSortByFieldStatus     StreamSortByField = "status"
+)
+
+// Stream sort order.
+const (
+	StreamSortOrderDesc StreamSortOrder = "desc"
+	StreamSortOrderAsc  StreamSortOrder = "asc"
 )
 
 // Server describes server API.
@@ -26,13 +43,15 @@ type Server interface {
 		ctx context.Context, streamUUID, participantUUID string, joinAllowed bool) error
 	StreamParticipants(ctx context.Context, streamUUID string) ([]Participant, error)
 	FinishStream(ctx context.Context, streamUUID string) error
-	NewStreamHostToken(ctx context.Context, streamUUID, subject string) (*StreamAuthInfo, error)
+	NewStreamHostToken(ctx context.Context, streamUUID, subject string) (*AuthInfo, error)
+	NewServerToken(ctx context.Context, claims *jwt.StandardClaims) (*AuthInfo, error)
 	StreamKey(ctx context.Context, streamUUID string) (*rsa.PublicKey, error)
 	PatchStream(ctx context.Context, streamUUID string, cfg PatchStreamConfig) (
 		*StreamOwnerInfo, error)
 	NewAvatar(ctx context.Context, contentType string, r io.Reader) (string, error)
 	AvatarRestrictions() AvatarRestrictions
 	AvatarByID(ctx context.Context, avatarID string) ([]byte, string, error)
+	StreamList(ctx context.Context, filter StreamFilter) (*StreamList, error)
 }
 
 // AvatarRestrictions represents avatar restrictions model.
@@ -90,7 +109,7 @@ type StreamOwnerInfo struct {
 	IP          string
 	LaunchMode  StreamLaunchMode
 	Host        HostInfo
-	Auth        *StreamAuthInfo
+	Auth        *AuthInfo
 }
 
 // HostInfo represents host of the stream info.
@@ -101,8 +120,8 @@ type HostInfo struct {
 	IP       string
 }
 
-// StreamAuthInfo represents stream authentication info model.
-type StreamAuthInfo struct {
+// AuthInfo represents authentication info model.
+type AuthInfo struct {
 	AccessToken string
 	Type        string
 }
@@ -141,4 +160,46 @@ type PatchStreamConfig struct {
 	Description *string
 	Join        *StreamJoinPolicyConfig
 	Host        *StreamHostConfig
+}
+
+// StreamFilter represents stream filter model.
+type StreamFilter struct {
+	SearchPhrase string
+	LaunchModes  []StreamLaunchMode
+	Statuses     []StreamStatus
+	SortBy       StreamSortByField
+	SortOrder    StreamSortOrder
+	PageSize     int
+	Page         int
+}
+
+// StreamSortByField represents sort by field type.
+type StreamSortByField string
+
+// StreamSortOrder represents stream sort order.
+type StreamSortOrder string
+
+// StreamList represents paginated streams model.
+type StreamList struct {
+	Streams  []StreamInfo
+	Page     int
+	PageSize int
+	Count    int
+	HasNext  bool
+	Total    int
+}
+
+// StreamInfo represents stream info model.
+type StreamInfo struct {
+	UUID        string
+	Name        string
+	Description string
+	IP          string
+	Port        int
+	LaunchMode  StreamLaunchMode
+	StartedAt   time.Time
+	FinishedAt  *time.Time
+	Status      StreamStatus
+	Join        StreamJoinPolicyConfig
+	Host        HostInfo
 }
