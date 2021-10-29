@@ -68,7 +68,7 @@ func (c *Client) Info(ctx context.Context) (*models.ServerInfoResponse, error) {
 	return &out, nil
 }
 
-// PingServer pings server.
+// Ping pings server.
 func (c *Client) Ping(ctx context.Context) (*models.PongResponse, error) {
 	var out models.PongResponse
 	req := requestParams{

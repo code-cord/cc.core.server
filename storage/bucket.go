@@ -93,6 +93,14 @@ func (b *Bucket) Store(key string, value interface{}, marshalFn MarshalFn) error
 	})
 }
 
+// Delete deletes value by the key.
+func (b *Bucket) Delete(key string) error {
+	return b.db.Update(func(t *bolt.Tx) error {
+		bucket := t.Bucket(wrap(b.name))
+		return bucket.Delete(wrap(key))
+	})
+}
+
 // Decode decodes raw value into out argument using provided unmarshal func.
 func (r *rawValue) Decode(out interface{}, unmarshalFn UnmarshalFn) error {
 	return unmarshalFn(r.v, out)
