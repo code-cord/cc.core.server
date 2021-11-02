@@ -27,16 +27,20 @@ type Options struct {
 	ServerAddress string
 }
 
-type responseDecoder func(r io.ReadCloser) error
+// ResponseDecoder represents custom defined response body decoder.
+type ResponseDecoder func(r io.ReadCloser) error
 
-type requestParams struct {
-	basePath              string
-	method                string
-	queryParams           map[string][]string
-	body                  interface{}
-	out                   interface{}
-	customResponseDecoder responseDecoder
-	expStatusCode         int
+// RequestParams represents request params model.
+type RequestParams struct {
+	Client                *http.Client
+	BasePath              string
+	BaseAddress           string
+	Method                string
+	QueryParams           map[string][]string
+	Body                  interface{}
+	Out                   interface{}
+	CustomResponseDecoder ResponseDecoder
+	ExpStatusCode         int
 }
 
 // NewClient returns new cli client instance.
@@ -55,13 +59,15 @@ func NewClient(opt ...Option) Client {
 // Info returns server info.
 func (c *Client) Info(ctx context.Context) (*models.ServerInfoResponse, error) {
 	var out models.ServerInfoResponse
-	req := requestParams{
-		basePath:      "/",
-		method:        http.MethodGet,
-		out:           &out,
-		expStatusCode: http.StatusOK,
+	req := RequestParams{
+		Client:        c.httpClient,
+		BaseAddress:   c.baseAddress,
+		BasePath:      "/",
+		Method:        http.MethodGet,
+		Out:           &out,
+		ExpStatusCode: http.StatusOK,
 	}
-	if err := c.doRequest(ctx, req); err != nil {
+	if err := DoRequest(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -71,13 +77,15 @@ func (c *Client) Info(ctx context.Context) (*models.ServerInfoResponse, error) {
 // Ping pings server.
 func (c *Client) Ping(ctx context.Context) (*models.PongResponse, error) {
 	var out models.PongResponse
-	req := requestParams{
-		basePath:      "/ping",
-		method:        http.MethodGet,
-		out:           &out,
-		expStatusCode: http.StatusOK,
+	req := RequestParams{
+		Client:        c.httpClient,
+		BaseAddress:   c.baseAddress,
+		BasePath:      "/ping",
+		Method:        http.MethodGet,
+		Out:           &out,
+		ExpStatusCode: http.StatusOK,
 	}
-	if err := c.doRequest(ctx, req); err != nil {
+	if err := DoRequest(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -88,14 +96,16 @@ func (c *Client) Ping(ctx context.Context) (*models.PongResponse, error) {
 func (c *Client) NewToken(ctx context.Context, body models.GenerateServerTokenRequest) (
 	*models.ServerTokenResponse, error) {
 	var out models.ServerTokenResponse
-	req := requestParams{
-		basePath:      "/token",
-		method:        http.MethodPost,
-		out:           &out,
-		body:          body,
-		expStatusCode: http.StatusOK,
+	req := RequestParams{
+		Client:        c.httpClient,
+		BaseAddress:   c.baseAddress,
+		BasePath:      "/token",
+		Method:        http.MethodPost,
+		Out:           &out,
+		Body:          body,
+		ExpStatusCode: http.StatusOK,
 	}
-	if err := c.doRequest(ctx, req); err != nil {
+	if err := DoRequest(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -123,14 +133,16 @@ func (c *Client) GetStreams(ctx context.Context, filter models.StreamListRequest
 	queryParams["page"] = []string{strconv.Itoa(filter.Page)}
 
 	var out models.StreamListResponse
-	req := requestParams{
-		basePath:      "/stream",
-		method:        http.MethodGet,
-		queryParams:   queryParams,
-		out:           &out,
-		expStatusCode: http.StatusOK,
+	req := RequestParams{
+		Client:        c.httpClient,
+		BaseAddress:   c.baseAddress,
+		BasePath:      "/stream",
+		Method:        http.MethodGet,
+		QueryParams:   queryParams,
+		Out:           &out,
+		ExpStatusCode: http.StatusOK,
 	}
-	if err := c.doRequest(ctx, req); err != nil {
+	if err := DoRequest(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -139,22 +151,26 @@ func (c *Client) GetStreams(ctx context.Context, filter models.StreamListRequest
 
 // FinishStream finishes running stream.
 func (c *Client) FinishStream(ctx context.Context, streamUUID string) error {
-	req := requestParams{
-		basePath:      fmt.Sprintf("/stream/%s", streamUUID),
-		method:        http.MethodDelete,
-		expStatusCode: http.StatusOK,
+	req := RequestParams{
+		Client:        c.httpClient,
+		BaseAddress:   c.baseAddress,
+		BasePath:      fmt.Sprintf("/stream/%s", streamUUID),
+		Method:        http.MethodDelete,
+		ExpStatusCode: http.StatusOK,
 	}
 
-	return c.doRequest(ctx, req)
+	return DoRequest(ctx, req)
 }
 
 // CreateStorageBackup creates storage backup.
 func (c *Client) CreateStorageBackup(ctx context.Context, storageName string, w io.Writer) error {
-	req := requestParams{
-		basePath:      fmt.Sprintf("/storage/%s", storageName),
-		method:        http.MethodGet,
-		expStatusCode: http.StatusOK,
-		customResponseDecoder: func(r io.ReadCloser) error {
+	req := RequestParams{
+		Client:        c.httpClient,
+		BaseAddress:   c.baseAddress,
+		BasePath:      fmt.Sprintf("/storage/%s", storageName),
+		Method:        http.MethodGet,
+		ExpStatusCode: http.StatusOK,
+		CustomResponseDecoder: func(r io.ReadCloser) error {
 			if _, err := io.Copy(w, r); err != nil {
 				return fmt.Errorf("could not read response body: %v", err)
 			}
@@ -163,13 +179,14 @@ func (c *Client) CreateStorageBackup(ctx context.Context, storageName string, w 
 		},
 	}
 
-	return c.doRequest(ctx, req)
+	return DoRequest(ctx, req)
 }
 
-func (c *Client) doRequest(ctx context.Context, params requestParams) error {
+// DoRequest sends http request with provided configuration.
+func DoRequest(ctx context.Context, params RequestParams) error {
 	var bodyReader io.Reader
-	if params.body != nil {
-		data, err := json.Marshal(params.body)
+	if params.Body != nil {
+		data, err := json.Marshal(params.Body)
 		if err != nil {
 			return fmt.Errorf("could not encode request body: %v", err)
 		}
@@ -177,26 +194,26 @@ func (c *Client) doRequest(ctx context.Context, params requestParams) error {
 		bodyReader = bytes.NewReader(data)
 	}
 
-	reqURL := fmt.Sprintf("%s%s", c.baseAddress, params.basePath)
-	req, err := http.NewRequestWithContext(ctx, params.method, reqURL, bodyReader)
+	reqURL := fmt.Sprintf("%s%s", params.BaseAddress, params.BasePath)
+	req, err := http.NewRequestWithContext(ctx, params.Method, reqURL, bodyReader)
 	if err != nil {
 		return fmt.Errorf("could not create request: %v", err)
 	}
 
 	q := req.URL.Query()
-	for param, values := range params.queryParams {
+	for param, values := range params.QueryParams {
 		for i := range values {
 			q.Add(param, values[i])
 		}
 	}
 	req.URL.RawQuery = q.Encode()
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := params.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("could not do request: %v", err)
 	}
 
-	if resp.StatusCode != params.expStatusCode {
+	if resp.StatusCode != params.ExpStatusCode {
 		var srvErr middleware.Error
 		if err := json.NewDecoder(resp.Body).Decode(&srvErr); err != nil {
 			return fmt.Errorf("unexpected response: %d %s", resp.StatusCode, resp.Status)
@@ -205,15 +222,15 @@ func (c *Client) doRequest(ctx context.Context, params requestParams) error {
 		return srvErr
 	}
 
-	if decoder := params.customResponseDecoder; decoder != nil {
+	if decoder := params.CustomResponseDecoder; decoder != nil {
 		return decoder(resp.Body)
 	}
 
-	if params.out == nil {
+	if params.Out == nil {
 		return nil
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(params.out); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(params.Out); err != nil {
 		return fmt.Errorf("could not parse response body: %v", err)
 	}
 

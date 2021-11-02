@@ -44,6 +44,5 @@ func (h *Router) patchStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := buildStreamOwnerInfoResponse(streamInfo)
-
 	middleware.WriteJSONResponse(w, http.StatusOK, resp)
 }

@@ -13,13 +13,14 @@ const (
 	errCodeAuth                = 1003
 
 	// server errors 2xxx.
-	errCodeServerPing    = 2000
-	errCodeCreateStream  = 2001
-	errCodeFinishStream  = 2002
-	errCodeUpdateStream  = 2003
-	errCodeGenerateToken = 2004
-	errCodeStreamList    = 2005
-	errCodeBackupStorage = 2006
+	errCodeServerPing        = 2000
+	errCodeCreateStream      = 2001
+	errCodeFinishStream      = 2002
+	errCodeUpdateStream      = 2003
+	errCodeGenerateToken     = 2004
+	errCodeStreamList        = 2005
+	errCodeBackupStorage     = 2006
+	errCodeUpdateParticipant = 2007
 
 	// stream errors 3xxx.
 	errCodeJoinStream              = 3000
@@ -86,6 +87,10 @@ var (
 	ErrBackupStorage = Error{
 		Code:    errCodeBackupStorage,
 		Message: "could not create storage backup",
+	}
+	ErrUpdateParticipantInfo = Error{
+		Code:    errCodeUpdateParticipant,
+		Message: "could not update participant info",
 	}
 )
 

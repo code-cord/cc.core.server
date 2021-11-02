@@ -30,13 +30,17 @@ func buildStreamParticipantsResponse(
 	for i := range participants {
 		p := &participants[i]
 
-		resp[i] = models.ParticipantResponse{
-			UUID:     p.UUID,
-			Name:     p.Name,
-			AvatarID: p.AvatarID,
-			Status:   p.Status,
-		}
+		resp[i] = buildStreamParticipantResponse(p)
 	}
 
 	return resp
+}
+
+func buildStreamParticipantResponse(participant *service.Participant) models.ParticipantResponse {
+	return models.ParticipantResponse{
+		UUID:     participant.UUID,
+		Name:     participant.Name,
+		AvatarID: participant.AvatarID,
+		Status:   participant.Status,
+	}
 }

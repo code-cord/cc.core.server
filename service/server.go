@@ -61,6 +61,8 @@ type Server interface {
 	AvatarByID(ctx context.Context, avatarID string) ([]byte, string, error)
 	StreamList(ctx context.Context, filter StreamFilter) (*StreamList, error)
 	StorageBackup(ctx context.Context, storageName ServerStorage, w io.Writer) error
+	PatchParticipant(ctx context.Context,
+		streamUUID, participantUUID string, cfg PatchParticipantConfig) (*Participant, error)
 }
 
 // AvatarRestrictions represents avatar restrictions model.
@@ -215,3 +217,9 @@ type StreamInfo struct {
 
 // ServerStorage represents server storage type.
 type ServerStorage string
+
+// PatchParticipantConfig represents patch participant configuration model.
+type PatchParticipantConfig struct {
+	Name     *string
+	AvatarID *string
+}

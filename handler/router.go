@@ -72,6 +72,9 @@ func New(cfg Config) Router {
 		HandlerFunc(r.getStreamParticipants)
 	streamSecureRouter.Path(`/stream/{uuid}/service/{route:[a-zA-Z0-9=\-\/]+}`).
 		HandlerFunc(r.streamProxy)
+	streamSecureRouter.Path("/stream/{uuid}/participants/me").
+		Methods(http.MethodPatch).
+		HandlerFunc(r.patchParticipant)
 
 	streamSecureHostRouter := r.NewRoute().Subrouter()
 	streamSecureHostRouter.Use(middleware.StreamAuthMiddleware(cfg.Server, true))

@@ -105,6 +105,12 @@ type PatchStreamRequest struct {
 	Host        *StreamHostInfoRequest `json:"host,omitempty"`
 }
 
+// PatchParticipantRequest represents patch participant request model.
+type PatchParticipantRequest struct {
+	Name     *string `json:"name,omitempty"`
+	AvatarID *string `json:"avatarId,omitempty"`
+}
+
 // Validate validates request model.
 func (req *CreateStreamRequest) Validate() error {
 	errs := validation.Errors{
@@ -205,6 +211,19 @@ func (req *PatchStreamRequest) Validate() error {
 
 	if req.Host != nil {
 		errs["host.username"] = validation.Validate(req.Join.Code,
+			validation.Length(5, 32),
+		)
+	}
+
+	return errs.Filter()
+}
+
+// Validate validates request model.
+func (req *PatchParticipantRequest) Validate() error {
+	errs := validation.Errors{}
+
+	if req.Name != nil {
+		errs["name"] = validation.Validate(req.Name,
 			validation.Length(5, 32),
 		)
 	}

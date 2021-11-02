@@ -32,6 +32,7 @@ type streamModule struct {
 	pendingParticipants *sync.Map
 	rsaKeys             *rsaKeys
 	serveAddress        string
+	handler             service.StreamHandler
 }
 
 type streamInfo struct {
@@ -125,13 +126,23 @@ func (s *Server) NewStream(ctx context.Context, cfg service.StreamConfig) (
 		return nil, fmt.Errorf("could not store %s stream data: %v", streamUUID, err)
 	}
 
+	serveAddress := fmt.Sprintf("%s:%d", startInfo.IP, startInfo.Port)
 	module := streamModule{
 		pendingParticipants: new(sync.Map),
 		rsaKeys:             keys,
 		Stream:              streamHandler,
-		serveAddress:        fmt.Sprintf("%s:%d", startInfo.IP, startInfo.Port),
+		serveAddress:        serveAddress,
+		handler:             NewStreamHandler(serveAddress),
 	}
 	s.streams.Store(streamUUID, module)
+
+	go s.addNewParticipant(streamUUID, service.StreamParticipant{
+		UUID:     hostUUID,
+		Name:     cfg.Host.Username,
+		AvatarID: cfg.Host.AvatarID,
+		Status:   service.ParticipantStatusActive,
+		Host:     true,
+	})
 
 	return buildStreamOwnerInfo(&info, token), nil
 }
@@ -230,6 +241,16 @@ func (s *Server) PatchStream(
 
 	if err := s.streamStorage.Default().Store(streamUUID, info, json.Marshal); err != nil {
 		return nil, fmt.Errorf("could not update stream info: %v", err)
+	}
+
+	if cfg.Host != nil {
+		go s.updateParticipantInfo(streamUUID, service.StreamParticipant{
+			UUID:     info.Host.UUID,
+			Name:     info.Host.Username,
+			AvatarID: info.Host.AvatarID,
+			Status:   service.ParticipantStatusActive,
+			Host:     true,
+		})
 	}
 
 	return buildStreamOwnerInfo(&info, ""), nil

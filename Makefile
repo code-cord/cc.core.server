@@ -7,6 +7,6 @@ fake-key:
 	go run server.go
 
 .EXPORT_ALL_VARIABLES:
-CODE_CORD_PATH=/home/artsem/Projects/GO/src/github.com/code-cord/cc.core.stream/
+CODE_CORD_PATH=/home/artsem/Projects/GO/src/github.com/code-cord/cc.core.stream/release
 CODE_CORD_SERVER_PUBLIC_KEY=/home/artsem/Downloads/id_rsa.pub
 CODE_CORD_SERVER_PRIVATE_KEY=/home/artsem/Downloads/id_rsa
