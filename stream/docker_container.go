@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/util"
@@ -106,8 +105,6 @@ func (s *DockerContainerStream) Start(ctx context.Context) (*service.StartStream
 	if err := cli.ContainerStart(ctx, s.containerID, types.ContainerStartOptions{}); err != nil {
 		return nil, fmt.Errorf("could not start docker container: %v", err)
 	}
-
-	time.Sleep(time.Second)
 
 	go func() {
 		okBodyChan, _ := cli.ContainerWait(

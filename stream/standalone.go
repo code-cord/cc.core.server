@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path"
 	"runtime"
-	"time"
 
 	"github.com/code-cord/cc.core.server/service"
 	"github.com/code-cord/cc.core.server/util"
@@ -71,8 +70,6 @@ func (s *StandaloneStream) Start(ctx context.Context) (*service.StartStreamInfo,
 			s.interruptChan <- err
 		}
 	}()
-
-	time.Sleep(time.Second)
 
 	return &service.StartStreamInfo{
 		IP:   s.preferedIP,

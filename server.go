@@ -130,7 +130,7 @@ func kek(data []byte) {
 	}*/
 }
 
-func main2() {
+func main() {
 	/*data, _ := PrivateKeyToEncryptedPEM(512, "password")
 	fmt.Println(string(data))
 

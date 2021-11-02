@@ -7,8 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/rpc"
-	"net/rpc/jsonrpc"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -23,16 +22,16 @@ import (
 )
 
 const (
-	defaultConnectToStreamRetryCount   = 3
-	defaultConnectToStreamRetryTimeout = 2 * time.Second
+	defaultConnectToStreamRetryCount   = 6
+	defaultConnectToStreamRetryTimeout = 500 * time.Millisecond
 	defaultStreamTokenType             = "bearer"
 )
 
 type streamModule struct {
 	service.Stream
-	rpcClient           *rpc.Client
 	pendingParticipants *sync.Map
 	rsaKeys             *rsaKeys
+	serveAddress        string
 }
 
 type streamInfo struct {
@@ -91,7 +90,7 @@ func (s *Server) NewStream(ctx context.Context, cfg service.StreamConfig) (
 	}
 
 	// start stream and connect.
-	rpcClient, startInfo, err := startStreamAndConnect(ctx, streamHandler)
+	startInfo, err := startStreamAndConnect(ctx, streamHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +125,13 @@ func (s *Server) NewStream(ctx context.Context, cfg service.StreamConfig) (
 		return nil, fmt.Errorf("could not store %s stream data: %v", streamUUID, err)
 	}
 
-	s.streams.Store(streamUUID, streamModule{
-		rpcClient:           rpcClient,
+	module := streamModule{
 		pendingParticipants: new(sync.Map),
 		rsaKeys:             keys,
 		Stream:              streamHandler,
-	})
+		serveAddress:        fmt.Sprintf("%s:%d", startInfo.IP, startInfo.Port),
+	}
+	s.streams.Store(streamUUID, module)
 
 	return buildStreamOwnerInfo(&info, token), nil
 }
@@ -157,6 +157,17 @@ func (s *Server) StreamInfo(
 		StartedAt:   info.StartedAt,
 		FinishedAt:  info.FinishedAt,
 	}, nil
+}
+
+// StreamAddress returns address where stream instance is running.
+func (s *Server) StreamAddress(ctx context.Context, streamUUID string) (string, error) {
+	stream, ok := s.streams.Load(streamUUID)
+	if !ok {
+		return "", fmt.Errorf("could not find running stream by UUID %s", streamUUID)
+	}
+
+	module := stream.(streamModule)
+	return module.serveAddress, nil
 }
 
 // FinishStream finishes running stream.
@@ -353,9 +364,6 @@ func (s *Server) listenStreamInterruptEvent(streamUUID string, intChan <-chan er
 func (s *Server) killStream(ctx context.Context, streamUUID string) {
 	if streamValue, ok := s.streams.Load(streamUUID); ok {
 		stream := streamValue.(streamModule)
-		if err := stream.rpcClient.Close(); err != nil {
-			logrus.Errorf("could not close %s stream connection: %v", streamUUID, err)
-		}
 
 		if err := stream.Stop(ctx); err != nil {
 			logrus.Errorf("could not stop %s stream: %v", streamUUID, err)
@@ -515,10 +523,10 @@ func generateRSAKeys() (*rsaKeys, error) {
 }
 
 func startStreamAndConnect(ctx context.Context, stream service.Stream) (
-	*rpc.Client, *service.StartStreamInfo, error) {
+	*service.StartStreamInfo, error) {
 	streamLaunchInfo, err := stream.Start(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not run stream instance: %v", err)
+		return nil, fmt.Errorf("could not run stream instance: %v", err)
 	}
 
 	var startStreamErr error
@@ -531,20 +539,19 @@ func startStreamAndConnect(ctx context.Context, stream service.Stream) (
 	}()
 
 	tcpAddress := fmt.Sprintf("%s:%d", streamLaunchInfo.IP, streamLaunchInfo.Port)
-	rpcClient, err := connectToStream(tcpAddress, defaultConnectToStreamRetryCount)
-	if err != nil {
+	if err := connectToStream(tcpAddress, defaultConnectToStreamRetryCount); err != nil {
 		startStreamErr = fmt.Errorf("could not connect to the running stream: %v", err)
-		return nil, nil, startStreamErr
+		return nil, startStreamErr
 	}
 
-	return rpcClient, streamLaunchInfo, nil
+	return streamLaunchInfo, nil
 }
 
-func connectToStream(address string, tryCount int) (*rpc.Client, error) {
+func connectToStream(address string, tryCount int) error {
 	for i := 0; i < tryCount; i++ {
-		client, err := jsonrpc.Dial("tcp", address)
+		conn, err := net.Dial("tcp", address)
 		if err == nil {
-			return client, nil
+			return conn.Close()
 		}
 
 		logrus.Warnf("could not connect to the stream: %s %v", address, err)
@@ -554,7 +561,7 @@ func connectToStream(address string, tryCount int) (*rpc.Client, error) {
 		}
 	}
 
-	return nil, errors.New("connection timeout")
+	return errors.New("connection timeout")
 }
 
 func buildStreamOwnerInfo(info *streamInfo, accessToken string) *service.StreamOwnerInfo {

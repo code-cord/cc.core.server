@@ -44,6 +44,7 @@ type Server interface {
 	Ping(ctx context.Context) error
 	NewStream(ctx context.Context, cfg StreamConfig) (*StreamOwnerInfo, error)
 	StreamInfo(ctx context.Context, streamUUID string) (*StreamPublicInfo, error)
+	StreamAddress(ctx context.Context, streamUUID string) (string, error)
 	JoinParticipant(ctx context.Context, streamUUID, joinCode string, p Participant) (
 		*JoinParticipantDecision, error)
 	DecideParticipantJoin(
